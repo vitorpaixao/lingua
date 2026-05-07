@@ -9,6 +9,8 @@ import httpx
 
 logger = logging.getLogger("lingua")
 
+QUESTION_DETECTED = "_question_detected"
+
 
 class OpenCodeClient:
     """Async HTTP client for OpenCode's headless server."""
@@ -21,6 +23,8 @@ class OpenCodeClient:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.session_id: Optional[str] = None
+        self._pending_prompt_task: Optional[asyncio.Task] = None
+        self._shown_part_ids: set = set()
 
     async def health(self) -> Dict[str, Any]:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -42,37 +46,6 @@ class OpenCodeClient:
             self.session_id = session_id
             return session_id
 
-    async def send_prompt(
-        self,
-        prompt: str,
-        model_provider: str = "openrouter",
-        model_id: str = "anthropic/claude-sonnet-4",
-    ) -> Dict[str, Any]:
-        if not self.session_id:
-            await self.create_session()
-
-        logger.info("Sending prompt (session=%s): %s", self.session_id, prompt[:100])
-
-        body = {
-            "parts": [{"type": "text", "text": prompt}],
-            "model": {
-                "providerID": model_provider,
-                "modelID": model_id,
-            },
-        }
-
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(
-                f"{self.base_url}/session/{self.session_id}/message",
-                json=body,
-            )
-            response.raise_for_status()
-            data = response.json()
-            logger.info(
-                "Response received (role=%s)", data.get("info", {}).get("role", "?")
-            )
-            return data
-
     async def get_messages(self) -> List[Dict[str, Any]]:
         if not self.session_id:
             return []
@@ -93,11 +66,13 @@ class OpenCodeClient:
     ) -> Dict[str, Any]:
         """Send prompt and poll for intermediate messages.
 
-        Calls on_new_step(step_dict) for each new completed tool part
-        discovered while the prompt is running. Deduplicates by part ID.
+        Returns the final response dict, or {QUESTION_DETECTED: True, "question": {...}}
+        if OpenCode asks a question. The POST is kept alive; call continue_after_answer().
         """
         if not self.session_id:
             await self.create_session()
+
+        logger.info("Sending prompt (session=%s): %s", self.session_id, prompt[:100])
 
         body = {
             "parts": [{"type": "text", "text": prompt}],
@@ -107,35 +82,115 @@ class OpenCodeClient:
             },
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            prompt_task = asyncio.create_task(
-                client.post(
-                    f"{self.base_url}/session/{self.session_id}/message",
-                    json=body,
-                )
-            )
+        self._pending_prompt_task = asyncio.create_task(
+            self._do_post(f"/session/{self.session_id}/message", body)
+        )
 
-            shown_part_ids: set = set()
-
-            while not prompt_task.done():
+        try:
+            while not self._pending_prompt_task.done():
                 await asyncio.sleep(poll_interval)
                 try:
-                    await self._poll_once(shown_part_ids, on_new_step)
+                    question = await self._poll_once(self._shown_part_ids, on_new_step)
+                    if question:
+                        logger.info("OpenCode asked a question, keeping POST alive")
+                        return {QUESTION_DETECTED: True, "question": question}
                 except Exception as e:
                     logger.warning("Poll error: %s", e)
 
-            response = await prompt_task
+            response = await self._pending_prompt_task
             response.raise_for_status()
             data = response.json()
 
             try:
-                await self._poll_once(shown_part_ids, on_new_step)
+                await self._poll_once(self._shown_part_ids, on_new_step)
             except Exception:
                 pass
 
+            self._pending_prompt_task = None
+            logger.info("Response received")
             return data
 
-    async def _poll_once(self, shown_part_ids: set, on_new_step):
+        except httpx.ReadTimeout:
+            logger.error("OpenCode read timeout")
+            self._pending_prompt_task = None
+            raise
+        except httpx.HTTPStatusError as e:
+            logger.error("OpenCode HTTP error %s", e.response.status_code)
+            self._pending_prompt_task = None
+            raise
+
+    async def continue_after_answer(
+        self,
+        answer: str,
+        on_new_step=None,
+        poll_interval: float = 2.0,
+    ) -> Dict[str, Any]:
+        """Send answer to a pending question and wait for original POST to complete.
+
+        The original prompt POST is still running on the server. Sending a message
+        satisfies the question tool, and the original POST completes with the final
+        response.
+        """
+        if not self.session_id:
+            raise RuntimeError("No active session")
+        if not self._pending_prompt_task:
+            raise RuntimeError("No pending prompt task")
+
+        logger.info("Sending answer (session=%s): %s", self.session_id, answer[:100])
+
+        body = {"parts": [{"type": "text", "text": answer}]}
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            ans_resp = await client.post(
+                f"{self.base_url}/session/{self.session_id}/message",
+                json=body,
+            )
+            ans_resp.raise_for_status()
+
+        logger.info("Answer sent, waiting for original POST to complete")
+
+        try:
+            while not self._pending_prompt_task.done():
+                await asyncio.sleep(poll_interval)
+                try:
+                    question = await self._poll_once(self._shown_part_ids, on_new_step)
+                    if question:
+                        logger.info("Another question detected after answer")
+                        return {QUESTION_DETECTED: True, "question": question}
+                except Exception as e:
+                    logger.warning("Poll error after answer: %s", e)
+
+            response = await self._pending_prompt_task
+            response.raise_for_status()
+            data = response.json()
+
+            try:
+                await self._poll_once(self._shown_part_ids, on_new_step)
+            except Exception:
+                pass
+
+            self._pending_prompt_task = None
+            logger.info("Continuation response received")
+            return data
+
+        except httpx.ReadTimeout:
+            logger.error("OpenCode read timeout in continuation")
+            self._pending_prompt_task = None
+            raise
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                "OpenCode HTTP error in continuation %s", e.response.status_code
+            )
+            self._pending_prompt_task = None
+            raise
+
+    async def _do_post(self, path: str, body: dict) -> httpx.Response:
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            return await client.post(f"{self.base_url}{path}", json=body)
+
+    async def _poll_once(
+        self, shown_part_ids: set, on_new_step
+    ) -> Optional[Dict[str, Any]]:
+        """Poll messages. Returns question data if OpenCode is asking, else None."""
         messages = await self.get_messages()
         for msg in messages:
             role = msg.get("info", {}).get("role", "")
@@ -149,6 +204,19 @@ class OpenCodeClient:
                 ptype = part.get("type", "")
 
                 if ptype == "tool":
+                    tool_name = part.get("tool", "?")
+                    state = part.get("state", {})
+                    status = (
+                        state.get("status", "unknown")
+                        if isinstance(state, dict)
+                        else "unknown"
+                    )
+
+                    if tool_name == "question" and status in ("running", "completed"):
+                        shown_part_ids.add(part_id)
+                        inp = state.get("input", {}) if isinstance(state, dict) else {}
+                        return {"tool": "question", "input": inp, "status": status}
+
                     step = self._part_to_step(part)
                     if step is None:
                         continue
@@ -167,10 +235,11 @@ class OpenCodeClient:
                                     "label": "thinking",
                                     "tool": "text",
                                     "input": {},
-                                    "output": text[:150],
+                                    "output": text[:200],
                                     "status": "completed",
                                 }
                             )
+        return None
 
     @staticmethod
     def _part_to_step(part: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -253,3 +322,18 @@ class OpenCodeClient:
                         ):
                             files.append(path)
         return files
+
+    @staticmethod
+    def extract_question(question_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract displayable question info from a question tool result."""
+        inp = question_data.get("input", {})
+        questions = inp.get("questions", [])
+        if not questions:
+            return {"question": "OpenCode is asking a question", "options": []}
+
+        q = questions[0]
+        return {
+            "question": q.get("question", "?"),
+            "header": q.get("header", ""),
+            "options": q.get("options", []),
+        }

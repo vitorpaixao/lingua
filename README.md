@@ -70,7 +70,7 @@ The live preview at `http://localhost:3000` is Vite's dev server running inside 
 | Layer | Technology | Role |
 |-------|-----------|------|
 | **Chat UI** | [Chainlit](https://chainlit.io) | Browser-based chat with embedded live preview iframe |
-| **Orchestrator** | [LangGraph](https://langchain-ai.github.io/langgraph/) | Routes prompts to OpenCode, maintains conversation state |
+| **Orchestrator** | Python async ([httpx](https://www.python-httpx.org/)) | Polls OpenCode API, manages session state and question-answer flow |
 | **Coding agent** | [OpenCode](https://opencode.ai) | AI agent that reads, writes, and edits project files |
 | **Runtime** | Docker + Docker Compose | Isolated environment with persistent volume |
 | **App scaffold** | Vite + React + TypeScript | Base project that hot-reloads on file changes |
@@ -124,7 +124,7 @@ Open **http://localhost:8000** and start chatting. Try one of the starter prompt
 - *"Replace the content with three product cards showing a name, description, and price"*
 - *"Add a to-do list where I can check items off"*
 
-Each prompt takes 30–60 seconds. The preview updates automatically.
+Each prompt takes 30–60 seconds. The preview updates automatically. If the agent needs clarification, it will ask a question with clickable option buttons.
 
 ## Useful Commands
 
@@ -165,11 +165,20 @@ lingua/
 │           └── index.css
 ├── orchestrator/
 │   ├── app.py                  # Chainlit chat UI + live preview
-│   ├── graph.py                # LangGraph single-node orchestrator
-│   ├── opencode_client.py      # HTTP client for OpenCode API
+│   ├── graph.py                # LangGraph single-node orchestrator (legacy)
+│   ├── opencode_client.py      # Async HTTP client for OpenCode API
 │   ├── chainlit.md             # Welcome message
-│   └── public/elements/
-│       └── Preview.jsx         # Custom iframe element
+│   └── public/
+│       ├── custom.js           # Split-screen panel (drag, toggle, open-in-tab)
+│       ├── stylesheet.css      # Panel styles
+│       └── elements/
+│           └── Preview.jsx     # Custom iframe element
+├── docs/
+│   └── messages.md             # Message flow documentation
+├── plan/
+│   ├── lingua-poc-plan.md      # Original 5-milestone plan
+│   └── errors/
+│       └── logfromopencode.md  # Polling bug analysis
 ├── docker-compose.yml
 ├── .env.example
 └── README.md
@@ -181,7 +190,6 @@ This is the POC — it validates the core loop. Planned features:
 
 - **Plan/approve flow** — see a plan before code executes
 - **Git checkpointing** — undo any change with rollback
-- **Clarification questions** — agent asks before assuming
 - **Multi-user sessions** — isolated containers per user
 - **Build error recovery** — auto-fix when Vite fails
 - **File uploads** — feed mockups and images to the agent
