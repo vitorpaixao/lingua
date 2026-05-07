@@ -34,11 +34,8 @@ async def set_starters(user: cl.User | None = None, conversation_id: str | None 
 @cl.on_chat_start
 async def on_chat_start():
     cl.user_session.set("messages", [])
-
-    preview = cl.CustomElement(name="Preview")
     await cl.Message(
-        content="Preview is ready. Tell me what to build!",
-        elements=[preview],
+        content="Tell me what to build! The preview is on the right."
     ).send()
 
 
