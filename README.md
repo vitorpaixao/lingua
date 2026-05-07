@@ -91,10 +91,20 @@ git clone <your-repo-url> lingua && cd lingua
 cp .env.example .env
 ```
 
-Edit `.env` and add your OpenRouter key:
+Edit `.env`:
+
 ```
 OPENROUTER_API_KEY=sk-or-v1-your-key-here
+
+# Optional — git workflow (see "Git workflow" section below)
+GITHUB_TOKEN=ghp_...
+BOOTSTRAP_REPO_URL=https://github.com/youruser/lingua-bootstrap.git
+TARGET_REPO_URL=https://github.com/youruser/my-project.git
+GIT_USER_NAME=Your Name
+GIT_USER_EMAIL=you@example.com
 ```
+
+`BOOTSTRAP_REPO_URL` is required — Lingua clones it into `/project` on first boot. See [Git workflow](#git-workflow-two-repo-model) below.
 
 ### 2. Start the container
 
@@ -152,17 +162,8 @@ docker compose down    # stops container
 ```
 lingua/
 ├── docker/
-│   ├── Dockerfile              # Container image
-│   ├── entrypoint.sh           # Boots OpenCode server + Vite
-│   ├── opencode.json           # OpenCode config (model, provider)
-│   └── vite-template/          # Base Vite + React project
-│       ├── package.json
-│       ├── vite.config.ts
-│       ├── index.html
-│       └── src/
-│           ├── App.tsx
-│           ├── main.tsx
-│           └── index.css
+│   ├── Dockerfile              # Container image (node + git + opencode-ai)
+│   └── entrypoint.sh           # Clones bootstrap, wires remotes, boots OpenCode + Vite
 ├── orchestrator/
 │   ├── app.py                  # Chainlit chat UI + live preview
 │   ├── graph.py                # LangGraph single-node orchestrator (legacy)
@@ -183,6 +184,71 @@ lingua/
 ├── .env.example
 └── README.md
 ```
+
+## Git workflow (two-repo model)
+
+Lingua supports a **bootstrap → target** workflow so you can clone a real GitHub repo as the starter and push session changes to a different repo.
+
+```
+GitHub
+  ├── bootstrap-repo            ← read-only template source (cloned into /project)
+  │   ├── src/                  ← starter code
+  │   ├── package.json
+  │   ├── opencode.json         ← per-project model + MCP config
+  │   └── .opencode/
+  │       ├── agents/           ← OpenCode subagents
+  │       ├── skills/           ← Lingua-specific skills
+  │       └── tools/            ← custom TS tools
+  │
+  └── target-repo               ← session changes pushed here (per-project)
+```
+
+Inside the container, `/project` ends up with two remotes:
+
+- `bootstrap` — the cloned template source. Push is intentionally disabled (`DISABLED_NO_PUSH`).
+- `origin` — the target repo. All commits/pushes from a session land here.
+
+To pull template upgrades into an active session:
+
+```bash
+git fetch bootstrap && git merge bootstrap/main
+```
+
+### Setup steps
+
+1. Create a `lingua-bootstrap` repo on GitHub. Add your starter code plus an `.opencode/` directory with whatever skills, subagents, MCP servers, and custom tools you want OpenCode to load.
+2. Create a target repo (empty) where session work will land.
+3. Generate a GitHub Personal Access Token (`repo` scope) and set `GITHUB_TOKEN` in `.env`.
+4. Set `BOOTSTRAP_REPO_URL` and `TARGET_REPO_URL` in `.env`.
+5. `docker compose down -v && docker compose up --build -d` — entrypoint clones the bootstrap into `/project` and wires both remotes.
+
+If `TARGET_REPO_URL` is unset at boot, Lingua's Chainlit UI prompts for it at session start.
+
+### Pushing changes
+
+Just ask in chat:
+
+> "Commit these changes on a new branch `lingua/dark-mode` and push to origin"
+
+OpenCode runs `git checkout -b`, `git add`, `git commit`, `git push -u origin <branch>` via its bash tool. The credential helper supplies the token automatically — no token ever appears in `git remote -v`.
+
+### Customising via the bootstrap repo
+
+Everything OpenCode supports — model, provider, subagents, skills, MCP servers, custom tools, system instructions — lives in the bootstrap repo's `.opencode/` directory and `opencode.json`. Lingua's image ships only the OpenCode runtime; the bootstrap repo is the single source of truth for configuration.
+
+Provider config uses OpenCode's env-substitution syntax so the API key never lands in git:
+
+```json
+"provider": {
+  "openrouter": {
+    "options": { "apiKey": "{env:OPENROUTER_API_KEY}" }
+  }
+}
+```
+
+Lingua passes `OPENROUTER_API_KEY` from `.env` into the container; OpenCode resolves the `{env:...}` placeholder at runtime. See [OpenCode docs](https://opencode.ai/docs/) for `.opencode/` layout and `mcp` config schema.
+
+A ready-to-copy starter config is at `plan/lingua-bootstrap-opencode.json` — drop it into the root of your bootstrap repo.
 
 ## What's Next
 

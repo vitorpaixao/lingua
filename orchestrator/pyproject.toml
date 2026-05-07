@@ -11,4 +11,5 @@ dependencies = [
     "langgraph>=1.1.10",
     "pydantic>=2.13.4",
     "python-dotenv>=1.2.2",
+    "python-engineio<4.12",
 ]

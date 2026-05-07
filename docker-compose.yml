@@ -11,6 +11,11 @@ services:
       - project-data:/project
     environment:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - BOOTSTRAP_REPO_URL=${BOOTSTRAP_REPO_URL:?BOOTSTRAP_REPO_URL must be set in .env (see plan/ligua--bootstrap/readme.md)}
+      - TARGET_REPO_URL=${TARGET_REPO_URL:-}
+      - GIT_USER_NAME=${GIT_USER_NAME:-Lingua}
+      - GIT_USER_EMAIL=${GIT_USER_EMAIL:-lingua@local}
     restart: unless-stopped
 
 volumes:

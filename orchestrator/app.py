@@ -37,9 +37,69 @@ async def set_starters(user: cl.User | None = None, conversation_id: str | None 
 async def on_chat_start():
     cl.user_session.set("messages", [])
     cl.user_session.set("pending_question", False)
+
+    if not cl.user_session.get("repo_setup_done"):
+        await _maybe_setup_target_remote()
+        cl.user_session.set("repo_setup_done", True)
+
     await cl.Message(
         content="Tell me what to build! The preview is on the right."
     ).send()
+
+
+async def _maybe_setup_target_remote():
+    """Probe /project remotes. If 'origin' is missing, prompt user for target URL.
+
+    Bootstrap clone is handled by entrypoint.sh based on env vars; this only
+    handles the per-session 'origin' (push destination) when not preconfigured.
+    """
+    try:
+        probe = await _client.run_bash(
+            "cd /project 2>/dev/null && git remote -v 2>/dev/null || echo NO_GIT"
+        )
+    except Exception as e:
+        await cl.Message(
+            content=f"Could not probe `/project` git state: {type(e).__name__}: {e}"
+        ).send()
+        return
+
+    if "NO_GIT" in probe:
+        await cl.Message(
+            content="`/project` is not a git repo. Restart the container with `BOOTSTRAP_REPO_URL` set, or work without git."
+        ).send()
+        return
+
+    if "origin\t" in probe or "origin " in probe:
+        return  # already configured
+
+    res = await cl.AskUserMessage(
+        content=(
+            "No `origin` remote configured. Paste the **target repo URL** "
+            "where session changes should be pushed (or leave empty to skip):"
+        ),
+        timeout=300,
+    ).send()
+    target_url = ""
+    if res:
+        target_url = (
+            res.get("output", "") if isinstance(res, dict) else getattr(res, "output", "")
+        ).strip()
+
+    if not target_url:
+        await cl.Message(
+            content="Skipping target remote. You can add one later: `git remote add origin <url>`."
+        ).send()
+        return
+
+    try:
+        await _client.run_bash(
+            f"cd /project && git remote add origin {target_url}"
+        )
+        await cl.Message(content=f"`origin` set to `{target_url}`.").send()
+    except Exception as e:
+        await cl.Message(
+            content=f"Failed to set origin: {type(e).__name__}: {e}"
+        ).send()
 
 
 @cl.action_callback("opencode_answer")

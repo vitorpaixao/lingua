@@ -183,6 +183,26 @@ class OpenCodeClient:
             self._pending_prompt_task = None
             raise
 
+    async def run_bash(self, command: str, on_new_step=None) -> str:
+        """Run a bash command via OpenCode and return the assistant's final text.
+
+        Used for one-shot setup operations (clone, remote rewiring, etc.).
+        Wastes one LLM round-trip — fine for infrequent setup, not hot paths.
+        """
+        prompt = (
+            "Execute exactly this bash command and report only the raw output. "
+            "Do not modify it. Do not run anything else. Do not summarise — "
+            "include the literal stdout/stderr verbatim.\n\n"
+            f"```bash\n{command}\n```"
+        )
+        result = await self.send_prompt_with_polling(
+            prompt=prompt,
+            on_new_step=on_new_step,
+        )
+        if QUESTION_DETECTED in result:
+            raise RuntimeError("Unexpected question during run_bash")
+        return self.extract_text_response(result)
+
     async def _do_post(self, path: str, body: dict) -> httpx.Response:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             return await client.post(f"{self.base_url}{path}", json=body)

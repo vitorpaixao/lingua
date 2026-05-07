@@ -1,0 +1,35 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "anthropic/claude-sonnet-4",
+  "provider": {
+    "openrouter": {
+      "options": {
+        "apiKey": "{env:OPENROUTER_API_KEY}"
+      }
+    }
+  },
+  "instructions": [
+    "/project may have two git remotes: 'origin' (target — where pushes go) and 'bootstrap' (read-only template source).",
+    "Always commit on a feature branch named 'lingua/<short-topic>'. Never commit directly to main or master.",
+    "Push to 'origin' only when the user explicitly asks. Never push to 'bootstrap' (its push URL is intentionally disabled).",
+    "To pull template upgrades from the bootstrap repo: git fetch bootstrap && git merge bootstrap/main."
+  ],
+  "mcp": {
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp",
+      "enabled": true
+    }
+  },
+  "agent": {
+    "frontend-builder": {
+      "description": "Builds and edits React/Vite UI components",
+      "mode": "subagent"
+    },
+    "git-helper": {
+      "description": "Handles branch creation, commits, and pushes safely",
+      "mode": "subagent",
+      "permission": { "bash": "ask" }
+    }
+  }
+}
