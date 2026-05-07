@@ -57,9 +57,27 @@ if [ ! -f /project/package.json ]; then
   exit $?
 fi
 
-if [ ! -d node_modules ]; then
+npm config set fetch-retries 5
+npm config set fetch-retry-mintimeout 20000
+npm config set fetch-retry-maxtimeout 120000
+npm config set fetch-timeout 600000
+
+if [ ! -d node_modules ] || [ ! -f node_modules/.package-lock.json ]; then
   echo "==> Installing dependencies"
-  npm install
+  attempt=1
+  max_attempts=4
+  delay=5
+  until npm install; do
+    if [ $attempt -ge $max_attempts ]; then
+      echo "==> npm install failed after $attempt attempts, giving up" >&2
+      exit 1
+    fi
+    echo "==> npm install failed (attempt $attempt/$max_attempts), retrying in ${delay}s" >&2
+    rm -rf node_modules
+    sleep $delay
+    attempt=$((attempt + 1))
+    delay=$((delay * 2))
+  done
 fi
 
 echo "==> Starting OpenCode server on :4096"
