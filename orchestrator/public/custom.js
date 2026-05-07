@@ -139,6 +139,7 @@
       const vw = (window.innerWidth - e.clientX) / window.innerWidth * 100;
       panelWidth = Math.max(20, Math.min(vw, 80));
       panel.style.width = panelWidth + "vw";
+      applyLayout();
       positionDragHandle();
     });
 
@@ -149,6 +150,7 @@
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
       panel.style.transition = "width 0.25s ease";
+      applyLayout();
       localStorage.setItem(STORAGE_KEY_WIDTH, panelWidth);
     });
   }
@@ -197,6 +199,7 @@
         panel.style.borderLeft = "none";
         dragHandle.style.display = "none";
       }
+      applyLayout();
       updateToggleAppearance();
       positionToggle();
       localStorage.setItem(STORAGE_KEY_VISIBLE, isVisible);
@@ -223,14 +226,23 @@
     toggleBtn.style.right = (isVisible ? rect.width + 8 : 8) + "px";
   }
 
+  function applyLayout() {
+    if (!panel) return;
+    const w = isVisible ? panelWidth : 0;
+    document.body.style.paddingRight = w + "vw";
+    document.documentElement.style.setProperty("--lingua-chat-width", (100 - w) + "vw");
+  }
+
   function init() {
     createPanel();
     createDragHandle();
     createToggleBtn();
+    applyLayout();
     positionDragHandle();
     positionToggle();
 
     window.addEventListener("resize", () => {
+      applyLayout();
       positionDragHandle();
       positionToggle();
     });

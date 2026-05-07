@@ -4,9 +4,11 @@ import chainlit as cl
 from langchain_core.messages import HumanMessage
 from dotenv import load_dotenv
 
-from graph import graph
+from opencode_client import OpenCodeClient
 
 load_dotenv()
+
+_client = OpenCodeClient()
 
 
 @cl.set_starters
@@ -44,32 +46,67 @@ async def on_message(message: cl.Message):
     history = cl.user_session.get("messages") or []
     history.append(HumanMessage(content=message.content))
 
-    async with cl.Step(name="Talking to OpenCode", type="tool") as step:
-        step.input = message.content
+    shown_step_ids: set = set()
+    working_msg = None
 
-        try:
-            result = await graph.ainvoke(
-                {
-                    "messages": history,
-                    "last_files_changed": [],
-                }
-            )
+    async def on_new_step(step_info):
+        nonlocal working_msg
+        step_id = step_info.get("id", "")
+        if step_id and step_id in shown_step_ids:
+            return
+        if step_id:
+            shown_step_ids.add(step_id)
 
-            ai_message = result["messages"][-1]
-            files = result.get("last_files_changed", [])
+        tool = step_info.get("tool", "")
+        label = step_info.get("label", "Tool call")
+        output = step_info.get("output", "")
 
-            history.append(ai_message)
-            cl.user_session.set("messages", history)
+        if tool == "text":
+            if working_msg:
+                working_msg.content = output
+                await working_msg.update()
+            else:
+                working_msg = cl.Message(content=output)
+                await working_msg.send()
+        else:
+            async with cl.Step(name=label, type="tool") as step:
+                inp = step_info.get("input", {})
+                if isinstance(inp, dict):
+                    if tool in ("edit", "write") and inp.get("newString"):
+                        step.input = f"File: {inp.get('filePath', '?')}\n\n{inp['newString'][:500]}"
+                    elif tool == "read":
+                        step.input = f"Reading {inp.get('filePath', '?')}"
+                    elif tool == "todowrite":
+                        todos = inp.get("todos", [])
+                        items = [t.get("content", "?") for t in todos[:5]]
+                        step.input = ", ".join(items)
+                    else:
+                        step.input = str(inp)[:500]
+                step.output = output if output else "Done"
+            working_msg = None
 
-            step.output = f"Modified: {', '.join(files) if files else '(no files)'}"
+    try:
+        result = await _client.send_prompt_with_polling(
+            prompt=message.content,
+            on_new_step=on_new_step,
+        )
 
-            response_text = ai_message.content
-            if files:
-                response_text += f"\n\n**Files changed:** `{', '.join(files)}`"
-            response_text += "\n\nCheck the preview."
+        text = OpenCodeClient.extract_text_response(result)
+        files = OpenCodeClient.extract_file_changes(result)
 
-            await cl.Message(content=response_text).send()
+        ai_message = cl.Message(content=text)
+        if files:
+            ai_message.content += f"\n\n**Files changed:** `{', '.join(files)}`"
 
-        except Exception as e:
-            step.output = f"Error: {e}"
-            await cl.Message(content=f"Something went wrong: {e}").send()
+        history.append(HumanMessage(content=message.content))
+        from langchain_core.messages import AIMessage
+
+        history.append(AIMessage(content=text))
+        cl.user_session.set("messages", history)
+
+        await ai_message.send()
+
+    except Exception as e:
+        await cl.Message(
+            content=f"Something went wrong: {type(e).__name__}: {e}"
+        ).send()
