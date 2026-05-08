@@ -1,6 +1,14 @@
 """Lingua - Chainlit frontend hosting the LangGraph orchestrator."""
 
+import asyncio
+import datetime
+import shlex
+from pathlib import Path
+
 import chainlit as cl
+from chainlit.server import app as fastapi_app
+from fastapi import Request
+from fastapi.responses import JSONResponse
 from langchain_core.messages import HumanMessage, AIMessage
 from dotenv import load_dotenv
 
@@ -9,6 +17,83 @@ from opencode_client import OpenCodeClient, QUESTION_DETECTED
 load_dotenv()
 
 _client = OpenCodeClient()
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+COMPOSE_EXEC = ["docker", "compose", "exec", "-T", "workspace", "bash", "-c"]
+
+
+async def _git(cmd: str) -> tuple[int, str, str]:
+    """Run a shell command inside the workspace container's /project. Returns (code, stdout, stderr)."""
+    full = f"cd /project && {cmd}"
+    proc = await asyncio.create_subprocess_exec(
+        *COMPOSE_EXEC, full,
+        cwd=str(REPO_ROOT),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    out, err = await proc.communicate()
+    return proc.returncode or 0, out.decode().strip(), err.decode().strip()
+
+
+async def git_status():
+    """GET /api/git/status — dispatched by _lingua_git_middleware."""
+    code, branch, _ = await _git("git rev-parse --abbrev-ref HEAD 2>/dev/null || echo none")
+    if code != 0 or branch == "none" or not branch:
+        return {"ok": False, "reason": "no-git"}
+
+    _, ahead, _ = await _git("git rev-list --count @{u}..HEAD 2>/dev/null || echo no-upstream")
+    _, dirty, _ = await _git("git status --porcelain | wc -l")
+
+    return {
+        "ok": True,
+        "branch": branch,
+        "ahead": ahead if ahead.isdigit() else None,
+        "no_upstream": ahead == "no-upstream",
+        "dirty_files": int(dirty) if dirty.isdigit() else 0,
+        "on_main": branch in ("main", "master"),
+    }
+
+
+async def git_publish():
+    """POST /api/git/publish — stage all + commit + push. Auto-branches off main/master.
+    Dispatched by _lingua_git_middleware."""
+    timestamp_human = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    timestamp_slug = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    msg = f"Update from Lingua {timestamp_human}"
+
+    code, branch, err = await _git("git rev-parse --abbrev-ref HEAD")
+    if code != 0 or not branch:
+        return {"ok": False, "step": "branch", "error": err or "could not read branch"}
+
+    if branch in ("main", "master"):
+        new_branch = f"lingua/{timestamp_slug}"
+        bcode, _, berr = await _git(f"git checkout -b {shlex.quote(new_branch)}")
+        if bcode != 0:
+            return {"ok": False, "step": "branch", "error": berr}
+        branch = new_branch
+
+    await _git("git add -A")
+    await _git(f"git commit -m {shlex.quote(msg)} || true")
+
+    pcode, push_out, push_err = await _git(f"git push -u origin {shlex.quote(branch)}")
+    if pcode != 0:
+        return {"ok": False, "step": "push", "branch": branch, "error": push_err}
+
+    return {"ok": True, "branch": branch, "message": msg, "output": push_out}
+
+
+@fastapi_app.middleware("http")
+async def _lingua_git_middleware(request: Request, call_next):
+    """Intercept /api/git/* before Chainlit's catch-all SPA route swallows them.
+    Route reordering proved unreliable; middleware is guaranteed to run first.
+    """
+    path = request.url.path
+    method = request.method
+    if path == "/api/git/status" and method == "GET":
+        return JSONResponse(await git_status())
+    if path == "/api/git/publish" and method == "POST":
+        return JSONResponse(await git_publish())
+    return await call_next(request)
 
 
 @cl.set_starters

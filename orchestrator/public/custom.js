@@ -48,12 +48,35 @@
       flex-shrink: 0;
     `;
 
-    const label = document.createElement("span");
-    label.textContent = "Live Preview";
-    label.style.cssText = "font-size: 12px; color: hsl(240 5% 64.9%); font-family: inherit;";
+    const branchBadge = document.createElement("div");
+    branchBadge.id = "lingua-branch-badge";
+    branchBadge.textContent = "…";
+    branchBadge.title = "Current git branch";
+    branchBadge.style.cssText = `
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 3px 8px; border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
+      color: hsl(240 5% 75%); background: hsl(240 6% 12%);
+      border: 1px solid hsl(240 3.7% 18%);
+      max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    `;
 
     const btnGroup = document.createElement("div");
-    btnGroup.style.cssText = "display: flex; gap: 4px;";
+    btnGroup.style.cssText = "display: flex; gap: 4px; align-items: center;";
+
+    const publishBtn = document.createElement("button");
+    publishBtn.id = "lingua-publish-btn";
+    publishBtn.textContent = "Publish";
+    publishBtn.title = "Stage all changes, commit, and push to GitHub (origin)";
+    publishBtn.style.cssText = `
+      padding: 5px 12px; border-radius: 4px; border: none;
+      background: hsl(142 71% 45%); color: white; cursor: pointer;
+      font-size: 11px; font-weight: 500;
+      transition: background 0.15s;
+    `;
+    publishBtn.onmouseenter = () => { if (!publishBtn.disabled) publishBtn.style.background = "hsl(142 71% 38%)"; };
+    publishBtn.onmouseleave = () => { if (!publishBtn.disabled) publishBtn.style.background = "hsl(142 71% 45%)"; };
+    publishBtn.onclick = handlePublishClick;
 
     function makeBtn(title, svg, onClick) {
       const btn = document.createElement("button");
@@ -73,6 +96,7 @@
     const svgRefresh = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>';
     const svgExternal = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
 
+    btnGroup.appendChild(publishBtn);
     btnGroup.appendChild(makeBtn("Refresh", svgRefresh, () => {
       if (iframe) iframe.src = iframe.src;
     }));
@@ -80,7 +104,7 @@
       window.open(PREVIEW_URL, "_blank");
     }));
 
-    toolbar.appendChild(label);
+    toolbar.appendChild(branchBadge);
     toolbar.appendChild(btnGroup);
 
     iframe = document.createElement("iframe");
@@ -233,6 +257,75 @@
     document.documentElement.style.setProperty("--lingua-chat-width", (100 - w) + "vw");
   }
 
+  async function refreshGitStatus() {
+    const badge = document.getElementById("lingua-branch-badge");
+    if (!badge) return;
+    try {
+      const r = await fetch("/api/git/status", { cache: "no-store" });
+      const d = await r.json();
+      if (!d.ok) {
+        badge.textContent = "no git";
+        badge.style.color = "hsl(0 70% 65%)";
+        return;
+      }
+      const aheadStr = d.no_upstream
+        ? " · new branch"
+        : (d.ahead && d.ahead !== "0" ? ` · ${d.ahead} ahead` : "");
+      const dirtyStr = d.dirty_files > 0 ? ` · ${d.dirty_files} unsaved` : "";
+      badge.textContent = `⎇ ${d.branch}${aheadStr}${dirtyStr}`;
+      badge.style.color = d.on_main ? "hsl(35 85% 65%)" : "hsl(240 5% 78%)";
+      badge.title = d.on_main
+        ? `On ${d.branch} — Publish will create a lingua/<timestamp> branch first.`
+        : `Branch: ${d.branch}`;
+    } catch (e) {
+      // transient, ignore
+    }
+  }
+
+  async function handlePublishClick() {
+    const btn = document.getElementById("lingua-publish-btn");
+    if (!btn) return;
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.style.opacity = "0.7";
+    btn.style.cursor = "wait";
+    btn.textContent = "Publishing…";
+    try {
+      const r = await fetch("/api/git/publish", { method: "POST" });
+      const d = await r.json();
+      if (d.ok) {
+        btn.textContent = "✓ Published";
+        btn.style.background = "hsl(142 71% 38%)";
+        btn.title = `Pushed to ${d.branch}: ${d.message}`;
+      } else {
+        btn.textContent = "✗ Failed";
+        btn.style.background = "hsl(0 70% 50%)";
+        btn.title = `${d.step || "error"}: ${d.error || "unknown"}`;
+      }
+    } catch (e) {
+      btn.textContent = "✗ Error";
+      btn.style.background = "hsl(0 70% 50%)";
+      btn.title = String(e);
+    }
+    refreshGitStatus();
+    setTimeout(() => {
+      btn.textContent = original;
+      btn.disabled = false;
+      btn.style.opacity = "1";
+      btn.style.cursor = "pointer";
+      btn.style.background = "hsl(142 71% 45%)";
+    }, 3000);
+  }
+
+  let _gitRefreshDebounce = null;
+  function scheduleGitRefresh() {
+    if (_gitRefreshDebounce) return;
+    _gitRefreshDebounce = setTimeout(() => {
+      _gitRefreshDebounce = null;
+      refreshGitStatus();
+    }, 400);
+  }
+
   function init() {
     createPanel();
     createDragHandle();
@@ -240,6 +333,18 @@
     applyLayout();
     positionDragHandle();
     positionToggle();
+
+    refreshGitStatus();
+    setInterval(refreshGitStatus, 5000);
+
+    new MutationObserver((muts) => {
+      for (const m of muts) {
+        if (m.addedNodes && m.addedNodes.length > 0) {
+          scheduleGitRefresh();
+          return;
+        }
+      }
+    }).observe(document.body, { childList: true, subtree: true });
 
     window.addEventListener("resize", () => {
       applyLayout();
