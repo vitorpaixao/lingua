@@ -77,7 +77,14 @@ async def git_publish():
         branch = new_branch
 
     await _git("git add -A")
-    await _git(f"git commit -m {shlex.quote(msg)} || true")
+    name = os.getenv("GIT_USER_NAME", "Lingua")
+    email = os.getenv("GIT_USER_EMAIL", "lingua@local")
+    ccode, _, cerr = await _git(
+        f"git -c user.name={shlex.quote(name)} -c user.email={shlex.quote(email)}"
+        f" commit -m {shlex.quote(msg)}"
+    )
+    if ccode != 0 and "nothing to commit" not in cerr:
+        return {"ok": False, "step": "commit", "error": cerr}
 
     token = os.getenv("GITHUB_TOKEN", "")
     if token:

@@ -31,6 +31,8 @@ services:
       - OPENCODE_URL=http://workspace:4096
       - PROJECT_DIR=/project
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - GIT_USER_NAME=${GIT_USER_NAME:-Lingua}
+      - GIT_USER_EMAIL=${GIT_USER_EMAIL:-lingua@local}
     depends_on:
       - workspace
     restart: unless-stopped
