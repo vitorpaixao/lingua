@@ -2,32 +2,36 @@
 
 import asyncio
 import datetime
+import os
 import shlex
 from pathlib import Path
 
 import chainlit as cl
 from chainlit.server import app as fastapi_app
 from fastapi import Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from langchain_core.messages import HumanMessage, AIMessage
 from dotenv import load_dotenv
 
 from opencode_client import OpenCodeClient, QUESTION_DETECTED
+import projects
 
 load_dotenv()
 
 _client = OpenCodeClient()
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-COMPOSE_EXEC = ["docker", "compose", "exec", "-T", "workspace", "bash", "-c"]
+PROJECT_DIR = Path(os.getenv("PROJECT_DIR", "/project"))
 
 
 async def _git(cmd: str) -> tuple[int, str, str]:
-    """Run a shell command inside the workspace container's /project. Returns (code, stdout, stderr)."""
-    full = f"cd /project && {cmd}"
+    """Run a git command in PROJECT_DIR. Returns (code, stdout, stderr)."""
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
     proc = await asyncio.create_subprocess_exec(
-        *COMPOSE_EXEC, full,
-        cwd=str(REPO_ROOT),
+        "bash", "-c", cmd,
+        cwd=str(PROJECT_DIR),
+        env=env,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -75,7 +79,13 @@ async def git_publish():
     await _git("git add -A")
     await _git(f"git commit -m {shlex.quote(msg)} || true")
 
-    pcode, push_out, push_err = await _git(f"git push -u origin {shlex.quote(branch)}")
+    token = os.getenv("GITHUB_TOKEN", "")
+    if token:
+        helper = f"!f() {{ echo username=oauth2; echo password={token}; }}; f"
+        push_cmd = f"git -c credential.helper={shlex.quote(helper)} push -u origin {shlex.quote(branch)}"
+    else:
+        push_cmd = f"git push -u origin {shlex.quote(branch)}"
+    pcode, push_out, push_err = await _git(push_cmd)
     if pcode != 0:
         return {"ok": False, "step": "push", "branch": branch, "error": push_err}
 
@@ -83,17 +93,57 @@ async def git_publish():
 
 
 @fastapi_app.middleware("http")
+async def _strip_frame_headers(request: Request, call_next):
+    response = await call_next(request)
+    if "x-frame-options" in response.headers:
+        del response.headers["x-frame-options"]
+    response.headers["content-security-policy"] = "frame-ancestors 'self' http://localhost:5173"
+    return response
+
+
+@fastapi_app.middleware("http")
 async def _lingua_git_middleware(request: Request, call_next):
-    """Intercept /api/git/* before Chainlit's catch-all SPA route swallows them.
+    """Intercept /api/git/* and /api/projects/* before Chainlit's catch-all SPA route.
     Route reordering proved unreliable; middleware is guaranteed to run first.
     """
     path = request.url.path
     method = request.method
+
     if path == "/api/git/status" and method == "GET":
         return JSONResponse(await git_status())
     if path == "/api/git/publish" and method == "POST":
         return JSONResponse(await git_publish())
+
+    if path == "/api/projects":
+        if method == "GET":
+            return JSONResponse(await projects.list_projects())
+        if method == "POST":
+            body = await request.json()
+            return JSONResponse(await projects.create_project(**body))
+    if path.startswith("/api/projects/"):
+        pid = path.split("/")[-1]
+        if method == "GET":
+            result = await projects.get_project(pid)
+            return JSONResponse(result if result is not None else {}, status_code=200 if result else 404)
+        if method == "PATCH":
+            body = await request.json()
+            result = await projects.update_project(pid, **body)
+            return JSONResponse(result if result is not None else {})
+        if method == "DELETE":
+            result = await projects.archive_project(pid)
+            return JSONResponse(result if result is not None else {})
+
     return await call_next(request)
+
+
+# Registered last = outermost in Starlette's stack — CORS headers appear on ALL responses
+# including those short-circuited by _lingua_git_middleware above.
+fastapi_app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @cl.set_starters

@@ -18,6 +18,34 @@ services:
       - GIT_USER_EMAIL=${GIT_USER_EMAIL:-lingua@local}
     restart: unless-stopped
 
+  orchestrator:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
+    container_name: lingua-orchestrator
+    ports:
+      - "8000:8000"
+    volumes:
+      - project-data:/project
+    environment:
+      - OPENCODE_URL=http://workspace:4096
+      - PROJECT_DIR=/project
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+    depends_on:
+      - workspace
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: lingua-web
+    ports:
+      - "5173:5173"
+    depends_on:
+      - orchestrator
+    restart: unless-stopped
+
 volumes:
   project-data:
     name: lingua-project-data

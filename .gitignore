@@ -5,3 +5,7 @@ __pycache__/
 .venv/
 .files/
 nul
+orchestrator/data/
+!orchestrator/data/.gitkeep
+web/node_modules/
+web/dist/

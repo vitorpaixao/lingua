@@ -3,6 +3,7 @@
 import json
 import logging
 import asyncio
+import os
 from typing import Optional, Dict, Any, List
 
 import httpx
@@ -11,13 +12,15 @@ logger = logging.getLogger("lingua")
 
 QUESTION_DETECTED = "_question_detected"
 
+_DEFAULT_OPENCODE_URL = os.getenv("OPENCODE_URL", "http://localhost:4096")
+
 
 class OpenCodeClient:
     """Async HTTP client for OpenCode's headless server."""
 
     def __init__(
         self,
-        base_url: str = "http://localhost:4096",
+        base_url: str = _DEFAULT_OPENCODE_URL,
         timeout: float = 600.0,
     ):
         self.base_url = base_url.rstrip("/")
