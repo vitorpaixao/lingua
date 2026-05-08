@@ -169,12 +169,12 @@ lingua/
 │   ├── Dockerfile              # Container image (node + git + opencode-ai)
 │   └── entrypoint.sh           # Clones bootstrap, wires remotes, boots OpenCode + Vite
 ├── orchestrator/
-│   ├── app.py                  # Chainlit chat UI + live preview + setup prompts
+│   ├── app.py                  # Chainlit chat UI + setup prompts + /api/git/* middleware
 │   ├── opencode_client.py      # Async HTTP client for OpenCode API + run_bash helper
 │   ├── graph.py                # LangGraph single-node orchestrator (legacy, unused)
 │   ├── chainlit.md             # Welcome message
 │   └── public/
-│       ├── custom.js           # Split-screen panel (drag, toggle, open-in-tab)
+│       ├── custom.js           # Right-side preview panel + branch badge + Publish button
 │       ├── stylesheet.css      # Panel styles
 │       └── elements/
 │           └── Preview.jsx     # Custom iframe element
@@ -234,11 +234,29 @@ If `TARGET_REPO_URL` is unset at boot, Lingua's Chainlit UI prompts for it at se
 
 ### Pushing changes
 
-Just ask in chat:
+Two ways: a one-click Publish button for non-technical users, or full control via chat.
+
+**Option A — Publish button (recommended for casual use)**
+
+In the right-side preview panel toolbar, you'll see a branch badge (`⎇ main`, `⎇ lingua/dark-mode · 2 ahead`, etc.) on the left and a green **Publish** button on the right. Click it and Lingua runs:
+
+```bash
+git add -A
+git commit -m "Update from Lingua <timestamp>"
+git push -u origin HEAD
+```
+
+If you're on `main` or `master`, Lingua silently creates a `lingua/<timestamp>` branch first so you never push directly to the protected branch. The button shows `✓ Published` on success or `✗ Failed` with a tooltip on error.
+
+Internals: the button hits `/api/git/publish`, which the orchestrator dispatches via FastAPI middleware (`_lingua_git_middleware` in `app.py`). The handler shells into the container with `docker compose exec workspace bash -c "git ..."` — no LLM round-trip, fast.
+
+**Option B — chat (full control)**
+
+Ask in chat:
 
 > "Commit these changes on a new branch `lingua/dark-mode` and push to origin"
 
-OpenCode runs `git checkout -b`, `git add`, `git commit`, `git push -u origin <branch>` via its bash tool. The credential helper supplies the token automatically — no token ever appears in `git remote -v`.
+OpenCode runs `git checkout -b`, `git add`, `git commit`, `git push -u origin <branch>` via its bash tool. The credential helper supplies the token automatically — no token ever appears in `git remote -v`. Use this when you want a custom commit message, multi-step git operations, or anything beyond the one-click flow.
 
 ### Customising via the bootstrap repo
 
@@ -264,6 +282,7 @@ This is the POC — it validates the core loop. Planned features:
 
 - **Plan/approve flow** — see a plan before code executes
 - **Bootstrap upgrade UX** — assisted `git fetch bootstrap && git merge` with conflict resolution
+- **Branch picker UI** — switch / create branches from the toolbar without chat
 - **Multi-user sessions** — isolated containers per user
 - **Build error recovery** — auto-fix when Vite fails
 - **File uploads** — feed mockups and images to the agent

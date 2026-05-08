@@ -40,9 +40,12 @@ npm run lint     # ESLint
 ### Python orchestrator
 ```bash
 cd orchestrator
-uv sync                           # install deps
-uv run python test_opencode.py    # test OpenCode client directly
+uv sync                                          # install deps (engineio pinned <4.12 for chainlit 2.x compat)
+uv run chainlit run app.py                       # start UI on :8000
+curl -UseBasicParsing http://localhost:8000/api/git/status   # smoke-test git middleware
 ```
+
+Chainlit does not auto-reload by default — Ctrl+C and re-run after editing `app.py` or `custom.js` (browser also needs `Ctrl+F5` for `custom.js`).
 
 ## Architecture
 
@@ -62,11 +65,11 @@ Chainlit UI (port 8000)     ←→     Orchestrator (Python async)
 
 | File | Role |
 |------|------|
-| `orchestrator/app.py` | Chainlit handlers, session state, UI steps |
-| `orchestrator/opencode_client.py` | Async HTTP client for OpenCode API |
-| `orchestrator/public/custom.js` | Split-screen panel UI (drag, toggle preview) |
+| `orchestrator/app.py` | Chainlit handlers, session state, UI steps, FastAPI middleware for `/api/git/*` |
+| `orchestrator/opencode_client.py` | Async HTTP client for OpenCode API + `run_bash` helper |
+| `orchestrator/public/custom.js` | Right-side preview panel (drag, toggle, iframe) + branch badge + Publish button + git status polling |
 | `orchestrator/public/elements/Preview.jsx` | Chainlit custom element — embeds Vite iframe |
-| `docker/entrypoint.sh` | Boots OpenCode + Vite inside container |
+| `docker/entrypoint.sh` | Boots OpenCode + Vite inside container; clones bootstrap; wires `bootstrap` (read-only) and `origin` (target) remotes |
 | Bootstrap repo's `opencode.json` | LLM config (model + provider + mcp + agents + instructions). Owned by the cloned bootstrap repo, not Lingua. |
 | Bootstrap repo (external, e.g. `lingua--bootstrap`) | Cloned into `/project` at boot. Carries Vite scaffold + `.opencode/` skills/agents/MCP. Required — `BOOTSTRAP_REPO_URL` in `.env`. |
 
@@ -80,6 +83,14 @@ Each step (tool call, text, question) fires `on_new_step()` → creates nested C
 
 If OpenCode asks a clarifying question, the POST is suspended. User answers via Chainlit → `continue_after_answer()` resumes.
 
+### Git endpoints (Publish button)
+
+`/api/git/status` and `/api/git/publish` are dispatched by `_lingua_git_middleware` in `app.py`. Why middleware not route decorators: Chainlit registers a SPA catch-all `@router.get("/{full_path:path}")` at module import (chainlit/server.py:1840), and FastAPI matches routes in registration order. User-app `@app.get(...)` decorators run AFTER the catch-all is already in place, so they never get hit. Reordering `app.routes` proved unreliable. Middleware runs before route matching → guaranteed dispatch.
+
+The handlers (`git_status`, `git_publish`) shell into the container via `asyncio.create_subprocess_exec(*COMPOSE_EXEC, ...)` — no LLM, no `run_bash` cost. `COMPOSE_EXEC = ["docker", "compose", "exec", "-T", "workspace", "bash", "-c"]`. `cwd=REPO_ROOT` is computed from `__file__` so compose finds `docker-compose.yml` regardless of where chainlit was launched.
+
+Publish flow: read `HEAD`. If on `main`/`master` → `git checkout -b lingua/<timestamp>`. Then `git add -A && git commit -m "..." || true && git push -u origin <branch>`. Credential helper inside the container supplies `GITHUB_TOKEN` automatically — never embedded in remote URL.
+
 ### Persistence
 
 - Code lives in Docker volume `lingua-project-data` at `/project`
@@ -88,7 +99,13 @@ If OpenCode asks a clarifying question, the POST is suspended. User answers via 
 
 ## Environment
 
-Copy `.env.example` → `.env` and set `OPENROUTER_API_KEY`. The Docker container reads it via `docker-compose.yml`.
+Copy `.env.example` → `.env`. Required vars (compose fails fast if `BOOTSTRAP_REPO_URL` is missing):
+
+- `OPENROUTER_API_KEY` — OpenRouter key. Resolved at runtime via `{env:OPENROUTER_API_KEY}` substitution inside the bootstrap repo's `opencode.json`. Never written to git.
+- `GITHUB_TOKEN` — PAT with `repo` scope. Used for cloning the bootstrap and pushing to the target. Wired into a git credential helper inside the container, so token never appears in `git remote -v`.
+- `BOOTSTRAP_REPO_URL` — required. Compose refuses to start without it (`${BOOTSTRAP_REPO_URL:?...}` syntax).
+- `TARGET_REPO_URL` — optional. If set, entrypoint adds it as `origin`. If unset, Chainlit prompts for it at session start (`_maybe_setup_target_remote()` in `app.py`).
+- `GIT_USER_NAME`, `GIT_USER_EMAIL` — used by `git config --global` inside the container before any commit.
 
 ## Dependencies
 
