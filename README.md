@@ -23,24 +23,27 @@ Every prompt builds on the last. The AI remembers your project state, so you can
 ## How it works
 
 ```
-You type a prompt in the chat
+You open http://localhost:5173
         │
         ▼
-┌─────────────────┐
-│   Chainlit UI   │  http://localhost:8000
-│   (chat + live  │
-│    preview)     │
-└────────┬────────┘
-         │ async HTTP polling
-         ▼
-┌─────────────────┐
-│  Orchestrator   │  Forwards prompts to OpenCode,
-│  (Python async) │  streams tool calls back to UI
-└────────┬────────┘
-         │ HTTP :4096
-         ▼
+┌──────────────────────────────────────────────────┐
+│   React Shell  (web/, port 5173)                  │
+│   Top bar: branch badge · Publish button          │
+│   ┌───────────────────┐  ┌───────────────────┐   │
+│   │  Chainlit iframe  │  │  Vite preview     │   │
+│   │  :8000            │  │  iframe  :3000    │   │
+│   └─────────┬─────────┘  └───────────────────┘   │
+└─────────────│────────────────────────────────────┘
+              │ async HTTP polling
+              ▼
+┌─────────────────────┐
+│  Orchestrator       │  Forwards prompts to OpenCode,
+│  (Chainlit/Python)  │  streams tool calls back to UI
+└──────────┬──────────┘
+           │ HTTP :4096
+           ▼
 ┌─────────────────────────────────────────┐
-│   Docker Container                      │
+│   workspace container                   │
 │                                         │
 │   ┌───────────────┐  ┌───────────────┐  │
 │   │   OpenCode    │  │    Vite +     │  │
@@ -70,10 +73,11 @@ The live preview at `http://localhost:3000` is Vite's dev server running inside 
 
 | Layer | Technology | Role |
 |-------|-----------|------|
-| **Chat UI** | [Chainlit](https://chainlit.io) | Browser-based chat with embedded live preview iframe |
-| **Orchestrator** | Python async ([httpx](https://www.python-httpx.org/)) | Polls OpenCode API, manages session state and question-answer flow |
+| **Shell UI** | React + Vite (port 5173) | Browser chrome: top bar, branch badge, Publish button, embeds chat + preview iframes |
+| **Chat UI** | [Chainlit](https://chainlit.io) (port 8000) | Chat surface — runs in Docker, embedded as an iframe in the shell |
+| **Orchestrator** | Python async ([httpx](https://www.python-httpx.org/)) | Polls OpenCode API, manages session state and question-answer flow; serves `/api/git/*` |
 | **Coding agent** | [OpenCode](https://opencode.ai) | AI agent that reads, writes, and edits project files |
-| **Runtime** | Docker + Docker Compose | Isolated environment with persistent volume |
+| **Runtime** | Docker + Docker Compose | Three services: `web`, `orchestrator`, `workspace` — all in containers |
 | **App scaffold** | Bootstrap repo (Vite + React + TypeScript) | Cloned into `/project` at boot; owns `opencode.json` and `.opencode/` |
 | **LLM** | OpenRouter (Claude Sonnet 4) | Configured in the bootstrap repo's `opencode.json` |
 
@@ -109,28 +113,21 @@ GIT_USER_EMAIL=you@example.com
 
 `BOOTSTRAP_REPO_URL` is enforced by `docker-compose.yml` — compose refuses to start if it's missing. The bootstrap repo's `opencode.json` must contain a `provider` block referencing `{env:OPENROUTER_API_KEY}` (see [Customising via the bootstrap repo](#customising-via-the-bootstrap-repo) below).
 
-### 2. Start the container
+### 2. Start everything
 
 ```bash
 docker compose up --build -d
 ```
 
-First boot takes ~1–2 min: pulls Node image, clones the bootstrap repo, runs `npm install`. Verify:
-- http://localhost:3000 — your bootstrap app's home page
+First boot takes ~2–3 min: builds three images, clones the bootstrap repo, runs `npm install`. Verify:
+- http://localhost:5173 — Lingua shell (start here)
+- http://localhost:3000 — your bootstrap app's home page (raw Vite preview)
 - http://localhost:4096/doc — OpenCode API spec
 - `docker compose exec workspace git -C /project remote -v` — should show `bootstrap` (push disabled) and `origin` (target)
 
-### 3. Start Lingua
+### 3. Build something
 
-```bash
-cd orchestrator
-uv sync
-uv run chainlit run app.py
-```
-
-### 4. Build something
-
-Open **http://localhost:8000** and start chatting. Try one of the starter prompts, or type your own:
+Open **http://localhost:5173** and start chatting. Try one of the starter prompts, or type your own:
 
 - *"Add a button that says Click Me with a blue background"*
 - *"Build a counter with increment and decrement buttons"*
@@ -146,47 +143,54 @@ Each prompt takes 30–60 seconds. The preview updates automatically. If the age
 # See the current code inside the container
 docker compose exec workspace cat /project/src/App.tsx
 
-# Watch OpenCode's logs
-docker compose logs -f workspace
+# Watch logs
+docker compose logs -f workspace       # OpenCode + Vite
+docker compose logs -f orchestrator    # Chainlit
 
-# Restart container (code is preserved)
+# Restart a service (code is preserved)
 docker compose restart workspace
+docker compose restart orchestrator
 
 # Wipe everything and start fresh
 docker compose down -v
-docker compose up -d
+docker compose up --build -d
 
 # Stop everything
-docker compose down    # stops container
-# Ctrl+C in the Chainlit terminal
+docker compose down
 ```
 
 ## Project Structure
 
 ```
 lingua/
+├── web/                        # React shell (port 5173) — owns top bar, branch badge, Publish
+│   ├── src/
+│   │   ├── App.tsx             # Router (IntroPage / WorkspacePage)
+│   │   ├── pages/
+│   │   │   ├── IntroPage.tsx   # Project picker / new-project flow
+│   │   │   └── WorkspacePage.tsx  # Three-pane layout: TopBar + Chainlit iframe + Vite iframe
+│   │   ├── components/
+│   │   │   ├── TopBar.tsx      # Branch badge + Publish button (polls /api/git/status)
+│   │   │   └── Sidebar.tsx     # Project info sidebar
+│   │   └── api/client.ts       # Typed fetch wrapper for /api/git/* and /api/projects
+│   └── Dockerfile
 ├── docker/
-│   ├── Dockerfile              # Container image (node + git + opencode-ai)
+│   ├── Dockerfile              # workspace image (node + git + opencode-ai)
 │   └── entrypoint.sh           # Clones bootstrap, wires remotes, boots OpenCode + Vite
 ├── orchestrator/
-│   ├── app.py                  # Chainlit chat UI + setup prompts + /api/git/* middleware
+│   ├── app.py                  # Chainlit chat UI + /api/git/* + /api/projects middleware
 │   ├── opencode_client.py      # Async HTTP client for OpenCode API + run_bash helper
-│   ├── graph.py                # LangGraph single-node orchestrator (legacy, unused)
+│   ├── projects.py             # Project CRUD (in-memory)
 │   ├── chainlit.md             # Welcome message
+│   ├── Dockerfile
 │   └── public/
-│       ├── custom.js           # Right-side preview panel + branch badge + Publish button
-│       ├── stylesheet.css      # Panel styles
-│       └── elements/
-│           └── Preview.jsx     # Custom iframe element
+│       └── custom.js           # (empty — chrome now owned by React shell)
 ├── docs/
 │   └── messages.md             # Message flow documentation
 ├── plan/
 │   ├── lingua-bootstrap-opencode.json  # Ready-to-copy opencode.json for bootstrap repo
 │   ├── lingua-bootstrap.md             # Prompt to scaffold a bootstrap repo
-│   ├── ligua--bootstrap/readme.md      # Bootstrap repo README template
-│   ├── lingua-poc-plan.md              # Original 5-milestone plan
-│   └── errors/
-│       └── logfromopencode.md          # Polling bug analysis
+│   └── ligua--bootstrap/readme.md      # Bootstrap repo README template
 ├── docker-compose.yml
 ├── .env.example
 ├── CLAUDE.md                   # Guidance for Claude Code working in this repo
@@ -238,7 +242,7 @@ Two ways: a one-click Publish button for non-technical users, or full control vi
 
 **Option A — Publish button (recommended for casual use)**
 
-In the right-side preview panel toolbar, you'll see a branch badge (`⎇ main`, `⎇ lingua/dark-mode · 2 ahead`, etc.) on the left and a green **Publish** button on the right. Click it and Lingua runs:
+In the top bar of the Lingua shell (`http://localhost:5173`), you'll see a branch badge (`⎇ main`, `⎇ lingua/dark-mode · 2 ahead`, etc.) on the left and a green **Publish** button on the right. Click it and Lingua runs:
 
 ```bash
 git add -A
@@ -248,7 +252,7 @@ git push -u origin HEAD
 
 If you're on `main` or `master`, Lingua silently creates a `lingua/<timestamp>` branch first so you never push directly to the protected branch. The button shows `✓ Published` on success or `✗ Failed` with a tooltip on error.
 
-Internals: the button hits `/api/git/publish`, which the orchestrator dispatches via FastAPI middleware (`_lingua_git_middleware` in `app.py`). The handler shells into the container with `docker compose exec workspace bash -c "git ..."` — no LLM round-trip, fast.
+Internals: `TopBar.tsx` hits `/api/git/publish` on the orchestrator. The orchestrator dispatches via FastAPI middleware (`_lingua_git_middleware` in `app.py`) and runs git directly in `PROJECT_DIR` — no LLM round-trip, fast. `GITHUB_TOKEN` is injected as a git credential helper so the token never appears in `git remote -v`.
 
 **Option B — chat (full control)**
 
