@@ -14,7 +14,9 @@
       "PowerShell(\"Waiting 25s for user to restart chainlit...\"; Start-Sleep -Seconds 25; try { \\(Invoke-WebRequest -Uri http://localhost:8000/api/git/status -UseBasicParsing -TimeoutSec 15\\).Content } catch { \"ERROR: $\\($_.Exception.Message\\)\" })",
       "Bash(xargs grep -l \"load_module\\\\|exec_module\\\\|run_module\\\\|run_chainlit\\\\|target\")",
       "Bash(Select-Object -First 50)",
-      "Bash(Format-Table FullName)"
+      "Bash(Format-Table FullName)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\vitor\\\\Documents\\\\AI-projects\\\\lingua\" -Directory)",
+      "Bash(Select-Object Name)"
     ]
   }
 }
