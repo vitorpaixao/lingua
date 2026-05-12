@@ -104,7 +104,7 @@ async def _strip_frame_headers(request: Request, call_next):
     response = await call_next(request)
     if "x-frame-options" in response.headers:
         del response.headers["x-frame-options"]
-    response.headers["content-security-policy"] = "frame-ancestors 'self' http://localhost:5173"
+    response.headers["content-security-policy"] = "frame-ancestors *"
     return response
 
 
@@ -147,7 +147,7 @@ async def _lingua_git_middleware(request: Request, call_next):
 # including those short-circuited by _lingua_git_middleware above.
 fastapi_app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )

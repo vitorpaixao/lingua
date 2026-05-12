@@ -1,4 +1,4 @@
-const BASE = 'http://localhost:8000'
+const BASE = `http://${window.location.hostname}:8000`
 
 export interface Project {
   id: string

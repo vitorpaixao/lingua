@@ -40,12 +40,12 @@ export function WorkspacePage() {
       <div className="flex flex-1 min-h-0">
         <Sidebar project={project} />
         <iframe
-          src="http://localhost:8000"
+          src={`http://${window.location.hostname}:8000`}
           title="Chainlit chat"
           className="flex-1 border-0 min-w-0"
         />
         <iframe
-          src="http://localhost:3000"
+          src={`http://${window.location.hostname}:3000`}
           title="Live preview"
           className="w-[480px] flex-shrink-0 border-0 border-l border-gray-700"
         />
