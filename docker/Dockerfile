@@ -9,6 +9,7 @@ RUN npm install -g opencode-ai@latest
 WORKDIR /project
 
 COPY entrypoint.sh /entrypoint.sh
+COPY lingua-vite.config.mjs /lingua-vite.config.mjs
 RUN chmod +x /entrypoint.sh
 
 EXPOSE 3000 4096

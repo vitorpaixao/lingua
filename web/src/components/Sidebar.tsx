@@ -6,7 +6,7 @@ interface SidebarProps {
 
 export function Sidebar({ project }: SidebarProps) {
   return (
-    <div className="w-56 flex-shrink-0 bg-gray-800 text-gray-200 flex flex-col p-4 gap-4 overflow-y-auto">
+    <div className="w-[10%] flex-shrink-0 bg-gray-800 text-gray-200 flex flex-col p-4 gap-4 overflow-y-auto">
       <div>
         <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">Project</div>
         <div className="font-semibold text-white truncate">{project.name}</div>

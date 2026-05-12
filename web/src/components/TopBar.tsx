@@ -3,9 +3,12 @@ import { api, type GitStatus } from '../api/client'
 
 interface TopBarProps {
   onBack: () => void
+  pickMode: boolean
+  onTogglePick: () => void
+  copyToast: string | null
 }
 
-export function TopBar({ onBack }: TopBarProps) {
+export function TopBar({ onBack, pickMode, onTogglePick, copyToast }: TopBarProps) {
   const [status, setStatus] = useState<GitStatus | null>(null)
   const [publishing, setPublishing] = useState(false)
   const [publishMsg, setPublishMsg] = useState<string | null>(null)
@@ -47,11 +50,24 @@ export function TopBar({ onBack }: TopBarProps) {
         <span className="text-yellow-400 text-xs">{status.dirty_files} unsaved</span>
       ) : null}
       <div className="flex-1" />
+      {copyToast && (
+        <span className="text-xs text-green-400">{copyToast} ✓ paste into chat</span>
+      )}
       {publishMsg && (
         <span className={`text-xs ${publishMsg.startsWith('Error') ? 'text-red-400' : 'text-green-400'}`}>
           {publishMsg}
         </span>
       )}
+      <button
+        onClick={onTogglePick}
+        className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+          pickMode
+            ? 'bg-blue-500 hover:bg-blue-400 text-white'
+            : 'bg-gray-700 hover:bg-gray-600 text-white'
+        }`}
+      >
+        {pickMode ? 'Picking… (ESC)' : 'Select'}
+      </button>
       <button
         onClick={publish}
         disabled={publishing}

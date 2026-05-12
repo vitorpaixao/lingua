@@ -227,6 +227,27 @@ OpenCode maintains a single session across all prompts in a conversation. This m
 
 ---
 
+## Element selection prepend
+
+When the user has picked an element via pick mode before sending a message, `_run_opencode` in `app.py` prepends a context block to the prompt before dispatching to OpenCode:
+
+```
+[Selected element from preview — edit this in code]
+source: src/components/Hero.tsx:42:5
+component: Hero
+selector: button.primary.btn-lg:nth-of-type(2)
+text: "Get started"
+html: <button class="primary btn-lg">Get started</button>
+
+<user prompt follows>
+```
+
+The selection is stored in `_pending_selection` (module-level in `app.py`), consumed and cleared on the next `_run_opencode` call. The Chainlit message history records only the original user prompt — the selection block is invisible in chat.
+
+See [picker.md](picker.md) for the full pick-mode flow.
+
+---
+
 ## Configuration
 
 | Parameter | Location | Default | Purpose |

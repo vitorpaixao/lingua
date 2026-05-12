@@ -88,5 +88,7 @@ sleep 2
 
 trap "kill $OPENCODE_PID; exit 0" SIGTERM SIGINT
 
-echo "==> Starting Vite dev server on :3000"
-exec npm run dev
+cp /lingua-vite.config.mjs /project/lingua-vite.config.mjs
+
+echo "==> Starting Vite dev server on :3000 with lingua shim config"
+exec npx vite --config lingua-vite.config.mjs

@@ -2,7 +2,9 @@
 
 # Lingua
 
-**Speak your app into existence.**
+![Lingua](docs/assets/lingua.png)
+
+## **Speak your app into existence.**
 
 Chat in plain language. Watch your React app build itself — live.
 
@@ -19,6 +21,20 @@ Lingua is a conversational app builder. You describe what you want in plain Engl
 **You type** — *"Add a counter with + and - buttons"* → **Lingua codes** — OpenCode edits `App.tsx` inside the container → **You see it** — the preview updates in real time.
 
 Every prompt builds on the last. The AI remembers your project state, so you can iterate naturally: *"Now make the buttons blue"*, *"Add a reset button"*, *"Give me a dark mode toggle"*. Each change appears live, no refresh needed.
+
+## Features
+
+| Feature | Description | Docs |
+|---------|-------------|------|
+| **Conversational coding** | Chat in plain language — OpenCode agent edits React files live inside a Docker container | [messages.md](docs/messages.md) |
+| **Live preview** | Vite HMR inside the container — changes appear in the preview iframe the moment a file is saved | — |
+| **Element picker** | Click any element in the preview to attach its source location, component name, and HTML as context to the next message | [picker.md](docs/picker.md) |
+| **Project management** | Create and switch between multiple projects, each with its own bootstrap and target repo | [projects.md](docs/projects.md) |
+| **Git status badge** | Top bar shows current branch, commits ahead, and dirty file count — polled live | [git.md](docs/git.md) |
+| **Publish button** | One click stages all changes, commits, and pushes to origin — auto-branches from main | [git.md](docs/git.md) |
+| **Clarification questions** | When OpenCode needs input, it pauses and shows clickable option buttons; the original prompt resumes after the answer | [messages.md](docs/messages.md) |
+
+---
 
 ## How it works
 
