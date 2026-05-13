@@ -124,11 +124,25 @@
     return { block: lines.join('\n'), summary: component || el.tagName.toLowerCase() }
   }
 
+  async function writeClipboard(text) {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return
+    }
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none'
+    document.body.appendChild(ta)
+    ta.focus()
+    ta.select()
+    try { document.execCommand('copy') } finally { document.body.removeChild(ta) }
+  }
+
   async function capture(el) {
     const { block, summary } = buildBlock(el)
     let copied = false
     try {
-      await navigator.clipboard.writeText(block)
+      await writeClipboard(block)
       copied = true
     } catch (err) {
       console.warn('lingua-picker: clipboard write failed', err)
