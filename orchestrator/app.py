@@ -194,18 +194,10 @@ async def _maybe_setup_target_remote():
 
     Bootstrap clone is handled by entrypoint.sh based on env vars; this only
     handles the per-session 'origin' (push destination) when not preconfigured.
+    Uses direct subprocess (no LLM round-trip) — same pattern as git_status/git_publish.
     """
-    try:
-        probe = await _client.run_bash(
-            "cd /project 2>/dev/null && git remote -v 2>/dev/null || echo NO_GIT"
-        )
-    except Exception as e:
-        await cl.Message(
-            content=f"Could not probe `/project` git state: {type(e).__name__}: {e}"
-        ).send()
-        return
-
-    if "NO_GIT" in probe:
+    code, probe, _ = await _git("git remote -v")
+    if code != 0:
         await cl.Message(
             content="`/project` is not a git repo. Restart the container with `BOOTSTRAP_REPO_URL` set, or work without git."
         ).send()
@@ -233,15 +225,11 @@ async def _maybe_setup_target_remote():
         ).send()
         return
 
-    try:
-        await _client.run_bash(
-            f"cd /project && git remote add origin {target_url}"
-        )
+    code, _, err = await _git(f"git remote add origin {shlex.quote(target_url)}")
+    if code != 0:
+        await cl.Message(content=f"Failed to set origin: {err}").send()
+    else:
         await cl.Message(content=f"`origin` set to `{target_url}`.").send()
-    except Exception as e:
-        await cl.Message(
-            content=f"Failed to set origin: {type(e).__name__}: {e}"
-        ).send()
 
 
 @cl.action_callback("opencode_answer")

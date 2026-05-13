@@ -12,6 +12,9 @@ export function WorkspacePage() {
   const [error, setError] = useState<string | null>(null)
   const [pickMode, setPickMode] = useState(false)
   const [copyToast, setCopyToast] = useState<string | null>(null)
+  const [previewReady, setPreviewReady] = useState(false)
+  const [bootElapsed, setBootElapsed] = useState(0)
+  const [iframeKey, setIframeKey] = useState(0)
   const previewRef = useRef<HTMLIFrameElement | null>(null)
 
   useEffect(() => {
@@ -44,6 +47,26 @@ export function WorkspacePage() {
       iframe.contentWindow?.postMessage(msg, '*')
     } catch {}
   }, [pickMode])
+
+  useEffect(() => {
+    if (previewReady) return
+    let cancelled = false
+    const startedAt = Date.now()
+    const tick = async () => {
+      try {
+        const r = await fetch('/preview/', { method: 'HEAD', cache: 'no-store' })
+        if (!cancelled && r.ok) {
+          setPreviewReady(true)
+          setIframeKey(k => k + 1)
+          return
+        }
+      } catch {}
+      if (!cancelled) setBootElapsed(Math.floor((Date.now() - startedAt) / 1000))
+    }
+    tick()
+    const id = setInterval(tick, 2000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [previewReady])
 
   const onPreviewLoad = () => {
     const iframe = previewRef.current
@@ -93,13 +116,26 @@ export function WorkspacePage() {
           title="Chainlit chat"
           className="w-[40%] flex-shrink-0 border-0"
         />
-        <iframe
-          ref={previewRef}
-          src="/preview/"
-          onLoad={onPreviewLoad}
-          title="Live preview"
-          className="w-[50%] flex-shrink-0 border-0 border-l border-gray-700"
-        />
+        <div className="relative w-[50%] flex-shrink-0 border-l border-gray-700">
+          <iframe
+            key={iframeKey}
+            ref={previewRef}
+            src="/preview/"
+            onLoad={onPreviewLoad}
+            title="Live preview"
+            className="w-full h-full border-0"
+          />
+          {!previewReady && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/95 text-gray-200 text-sm gap-3">
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent" />
+              <div>Workspace booting — installing dependencies…</div>
+              <div className="text-xs text-gray-500">{bootElapsed}s elapsed</div>
+              {bootElapsed > 60 && (
+                <div className="text-xs text-yellow-400">Still booting — check <code>docker compose logs workspace</code></div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
