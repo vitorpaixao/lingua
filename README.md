@@ -43,8 +43,8 @@ You open http://localhost:5173
         │
         ▼
 ┌──────────────────────────────────────────────────┐
-│   React Shell  (web/, port 5173)                  │
-│   Top bar: branch badge · Publish button          │
+│   React Shell  (web/, port 5173)                 │
+│   Top bar: branch badge · Publish button         │
 │   ┌───────────────────┐  ┌───────────────────┐   │
 │   │  Chainlit iframe  │  │  Vite preview     │   │
 │   │  :8000            │  │  iframe  :3000    │   │
@@ -68,10 +68,10 @@ You open http://localhost:5173
 │   └───────────────┘  └───────────────┘  │
 │                                         │
 │   /project/  ← cloned from bootstrap    │
-│   ├── src/             ← starter app     │
-│   ├── opencode.json    ← model + MCP     │
-│   ├── .opencode/       ← skills, agents  │
-│   └── package.json                       │
+│   ├── src/             ← starter app    │
+│   ├── opencode.json    ← model + MCP    │
+│   ├── .opencode/       ← skills, agents │
+│   └── package.json                      │
 └─────────────────────────────────────────┘
          :3000 (preview)  :4096 (API)
 ```

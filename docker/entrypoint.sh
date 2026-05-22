@@ -62,6 +62,11 @@ npm config set fetch-retry-mintimeout 20000
 npm config set fetch-retry-maxtimeout 120000
 npm config set fetch-timeout 600000
 
+echo "==> Starting OpenCode server on :4096"
+opencode serve --hostname 0.0.0.0 --port 4096 &
+OPENCODE_PID=$!
+trap "kill $OPENCODE_PID; exit 0" SIGTERM SIGINT
+
 if [ ! -d node_modules ] || [ ! -f node_modules/.package-lock.json ]; then
   echo "==> Installing dependencies"
   attempt=1
@@ -79,14 +84,6 @@ if [ ! -d node_modules ] || [ ! -f node_modules/.package-lock.json ]; then
     delay=$((delay * 2))
   done
 fi
-
-echo "==> Starting OpenCode server on :4096"
-opencode serve --hostname 0.0.0.0 --port 4096 &
-OPENCODE_PID=$!
-
-sleep 2
-
-trap "kill $OPENCODE_PID; exit 0" SIGTERM SIGINT
 
 cp /lingua-vite.config.mjs /project/lingua-vite.config.mjs
 

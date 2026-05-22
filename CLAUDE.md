@@ -10,13 +10,14 @@ Lingua is a conversational app builder. User types a prompt in chat → orchestr
 
 ### Run the system
 ```bash
-# Start Docker container (OpenCode + Vite on ports 4096/3000)
-docker compose up --build -d
+# Build the web shell first (required before docker compose up --build)
+cd web && npm run build && cd ..
 
-# Start Chainlit chat UI (port 8000)
-cd orchestrator
-uv run chainlit run app.py
+# Start all Docker services (workspace + orchestrator + web shell on 5173)
+docker compose up --build -d
 ```
+
+After editing any file under `web/src/`, re-run `npm run build` then `docker compose up --build -d` to pick up changes. For active UI development, run `cd web && npm run dev` locally (port 5173) instead of going through Docker.
 
 ### Inspect running container
 ```bash

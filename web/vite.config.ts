@@ -11,11 +11,12 @@ export default defineConfig({
         target: 'http://workspace:3000',
         changeOrigin: false,
         ws: true,
-        configure: (proxy) => {
-          proxy.on('proxyReq', (proxyReq) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        configure: (proxy: any) => {
+          proxy.on('proxyReq', (proxyReq: any) => {
             proxyReq.setHeader('host', 'localhost')
           })
-          proxy.on('proxyReqWs', (proxyReq) => {
+          proxy.on('proxyReqWs', (proxyReq: any) => {
             proxyReq.setHeader('host', 'localhost')
           })
         },

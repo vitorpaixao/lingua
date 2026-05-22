@@ -43,7 +43,7 @@ services:
       dockerfile: Dockerfile
     container_name: lingua-web
     ports:
-      - "5173:5173"
+      - "5173:80"
     depends_on:
       - orchestrator
     restart: unless-stopped
