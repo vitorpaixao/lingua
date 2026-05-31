@@ -12,16 +12,19 @@ Lingua is a conversational app builder. The user types a prompt in a chat interf
 Browser
   └── React Shell (port 5173)
         ├── Chat panel  ← Ant Design X (XProvider + Bubble.List + Sender)
-        │     ↕ SSE + REST
+        │     ↕ same-origin /api/* (nginx proxies to orchestrator:8000)
         ├── FastAPI Backend (port 8000)
-        │     └── LangGraph orchestrator
-        │           └── OpenCode client
-        │                 ↕ HTTP (prompt_async + SSE event stream)
-        │                 OpenCode server (port 4096, inside workspace container)
-        │                       ↕ reads/writes files
-        │                       /project/src/  (Docker volume)
-        │                             ↕ Vite HMR
-        └── Preview iframe (port 3000, proxied as /preview)
+        │     ├── LangGraph orchestrator
+        │     │     └── OpenCode client (stateless, session ID passed in)
+        │     │           ↕ HTTP (prompt_async + SSE event stream)
+        │     │           OpenCode server (port 4096, inside workspace container)
+        │     │                 ↕ reads/writes files
+        │     │                 /project/src/  (symlink → /project-data/{project_id}/)
+        │     │                       ↕ Vite HMR
+        │     └── Redis (Streams + key-value)
+        │           - SSE event streams per session
+        │           - Lingua↔OpenCode session ID mapping
+        └── Preview iframe (proxied as /preview)
               Vite dev server (inside workspace container)
 ```
 
@@ -29,10 +32,12 @@ Browser
 
 | Layer | Technology | Responsibility |
 |-------|------------|----------------|
-| **React Shell** | React + Vite + Ant Design | Split-screen layout, chat UI, git badge, project management UI |
-| **FastAPI Backend** | Python + FastAPI | SSE streaming, REST endpoints, session state, git operations |
-| **LangGraph** | Python + LangGraph | Orchestrates prompt → agent → response; routes events to SSE stream |
-| **OpenCode Client** | Python (httpx + asyncio) | Submits prompts to OpenCode, consumes SSE event stream |
+| **React Shell** | React + Vite + Ant Design + Ant Design X | Split-screen layout, chat UI, git badge, project management UI, client-side selection state |
+| **nginx** | nginx in web container | Serves React shell; reverse-proxies `/api/*` to orchestrator (same-origin) |
+| **FastAPI Backend** | Python + FastAPI | SSE streaming, REST endpoints, git operations, workspace switching |
+| **Redis** | Redis 7 | Event streams (SSE backbone), session mappings, reconnect replay |
+| **LangGraph** | Python + LangGraph | Orchestrates prompt → agent → response; routes events to Redis |
+| **OpenCode Client** | Python (httpx + asyncio) | Stateless; consumes OpenCode's SSE event stream |
 | **OpenCode Server** | Node.js (Docker) | AI coding agent; reads/writes `/project` files via LLM tool calls |
 | **Vite Dev Server** | Node.js (Docker) | Serves the React app under construction; HMR on file change |
 
@@ -40,30 +45,37 @@ Browser
 
 ## Docker Services
 
-Three containers, one shared volume.
+Four containers, one shared workspace volume, one Redis volume.
 
 ### workspace
 - **Image**: `node:22-slim`
-- **Ports**: `3000` (Vite), `4096` (OpenCode)
-- **Volume**: `lingua-project-data` → `/project`
+- **Ports**: `3000` (Vite), `4096` (OpenCode) — exposed only to other containers (not host)
+- **Volumes**:
+  - `lingua-project-data` → `/project-data` (per-project subdirs live here)
+  - `lingua-agent-config` → `/lingua-agent-config` (cloned from `AGENT_CONFIG_REPO_URL`)
+- **Boot**: clones `AGENT_CONFIG_REPO_URL`, then waits for a workspace-switch trigger to populate `/project-data/{project_id}/`. Symlink `/project` → `/project-data/{active_id}` is created on switch.
 - **Starts**: OpenCode server + Vite dev server
-- **Bootstrap**: clones `BOOTSTRAP_REPO_URL` into `/project` on first boot; adds `TARGET_REPO_URL` as `origin` remote
 
 ### orchestrator
 - **Image**: `python:3.12-slim`
-- **Port**: `8000`
-- **Volume**: `lingua-project-data` → `/project` (git operations run here)
+- **Port**: `8000` (exposed only to web container via Docker network)
+- **Volume**: `lingua-project-data` → `/project-data` (git operations + symlink management run here)
 - **Starts**: FastAPI + LangGraph
 
 ### web
-- **Image**: Node (Vite build → nginx static)
-- **Port**: `5173`
+- **Image**: Node multi-stage (Vite build → nginx static + reverse proxy)
+- **Port**: `5173` (the ONLY host-facing port)
 - **Volume**: none
-- **Starts**: nginx serving the compiled React shell
+- **Serves**: static React app + reverse-proxies `/api/*` → `orchestrator:8000`
 
-### Shared volume
+### redis
+- **Image**: `redis:7-alpine`
+- **Port**: `6379` (internal only)
+- **Volume**: `lingua-redis-data` → `/data` (RDB snapshots; event streams survive restart)
 
-`lingua-project-data` is mounted in both `workspace` (`/project` read-write) and `orchestrator` (`/project` read-write for git). Code lives here; it survives container restarts and is destroyed only by `docker compose down -v`.
+### Shared workspace volume
+
+`lingua-project-data` is mounted in both `workspace` and `orchestrator` at `/project-data`. Per-project subdirectories live inside: `/project-data/{project_id}/`. The workspace container maintains a symlink `/project → /project-data/{active_id}` that gets atomically swapped during a workspace switch. Vite + OpenCode always see `/project`; only Lingua knows about the underlying subdirs.
 
 ---
 
@@ -71,12 +83,12 @@ Three containers, one shared volume.
 
 ### React Shell → FastAPI
 
-REST + SSE. All calls to the backend are relative (same host, port 8000).
+All requests are same-origin via nginx proxy. Frontend uses bare `/api/...` paths.
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `POST` | `/api/chat` | Submit a user prompt; returns `{ session_id, message_id }` |
-| `GET` | `/api/chat/stream` | SSE stream of agent events for the active session |
+| `POST` | `/api/chat` | Submit user prompt (body includes `session_id`, optional `selection`) |
+| `GET` | `/api/chat/stream?session_id=<id>` | SSE stream of agent events (supports `Last-Event-ID` header for replay) |
 | `POST` | `/api/chat/answer` | Submit answer to a pending agent question |
 | `GET` | `/api/git/status` | Current branch + dirty state |
 | `POST` | `/api/git/publish` | Stage + commit + push |
@@ -85,19 +97,22 @@ REST + SSE. All calls to the backend are relative (same host, port 8000).
 | `GET` | `/api/projects/:id` | Get project |
 | `PATCH` | `/api/projects/:id` | Update project |
 | `DELETE` | `/api/projects/:id` | Archive project |
-| `POST` | `/api/selection` | Store picked element context |
-| `GET` | `/api/selection` | Read picked element context |
-| `DELETE` | `/api/selection` | Clear picked element context |
+| `POST` | `/api/workspace/switch` | Switch active workspace (body: `{ project_id, force? }`) |
+| `GET` | `/api/workspace/active` | Get currently active project ID |
 
-### FastAPI → OpenCode (new — SSE, not polling)
+**Note:** there is no `/api/selection` endpoint. Element picker selection is held in React state and sent inline with `POST /api/chat` (see `06-element-picker.md`).
+
+### FastAPI → OpenCode (SSE, not polling)
 
 **Submit prompt (fire-and-forget):**
 ```
 POST http://workspace:4096/session/{id}/prompt_async
 Content-Type: application/json
-{ "parts": [{ "type": "text", "text": "<prompt>" }], "model": { ... } }
+{ "parts": [{ "type": "text", "text": "<prompt>" }] }
 → 204 No Content
 ```
+
+Model is NOT in the request body — OpenCode reads it from `/project/.opencode/opencode.json` (copied from agent-config at workspace switch; see `07-agent-config.md`).
 
 **Consume real-time events:**
 ```
@@ -115,11 +130,33 @@ POST http://workspace:4096/session
 
 ### FastAPI → LangGraph
 
-LangGraph is invoked directly in-process (not over HTTP). The FastAPI `/api/chat` handler calls `graph.astream_events(state, version="v2")` and pipes the resulting `on_custom_event` events into the SSE response.
+LangGraph is invoked directly in-process. The `/api/chat` handler spawns a background task that calls `graph.astream_events(state, version="v2")` and forwards `on_custom_event` events into the Redis Stream for this session.
+
+### Redis Schema
+
+| Key / Stream | Type | Purpose |
+|-------------|------|---------|
+| `events:{session_id}` | Stream | All `agent_step`, `agent_question`, `agent_response` events; consumed by SSE reader; supports replay via `Last-Event-ID` |
+| `opencode_session:{session_id}` | String | OpenCode session ID for this Lingua session; lazily created on first prompt |
+| `pending_question:{session_id}` | String (`"1"`) | Set when agent has emitted `agent_question` and not yet received an answer; deleted on answer |
+| `history:{session_id}` | List of JSON | Conversation history (HumanMessage / AIMessage) |
+| `active_workspace` | String | Currently active project ID |
+
+Streams have a max length cap (e.g. 1000 events) and a TTL (e.g. 24h after last access) to prevent unbounded growth.
 
 ### SSE Event Schema (FastAPI → React Shell)
 
-All events are JSON lines prefixed with `data: `. Three event types:
+All events are JSON lines prefixed with `data: ` and include an `id: <stream_id>` line for replay support.
+
+```
+id: 1717248000000-0
+data: {"type":"agent_step","tool":"read", ...}
+
+id: 1717248001234-0
+data: {"type":"agent_response","text":"...","files":[...]}
+```
+
+**Three event types:**
 
 **`agent_step`** — a tool call or thinking text delta:
 ```json
@@ -154,30 +191,66 @@ All events are JSON lines prefixed with `data: `. Three event types:
 
 ---
 
+## Session Identity
+
+Lingua sessions are identified by `session_id`, a client-generated UUID v4.
+
+- **Generated**: client-side on first chat open
+- **Stored**: `localStorage["lingua_session_id"]` — survives tab refresh and browser restart
+- **Lifecycle**: never regenerated unless user explicitly clears storage
+- **Server**: stateless w.r.t. session creation; just uses `session_id` as a Redis key prefix
+
+This is required because SSE `EventSource` cannot send POST bodies or auth headers — the session ID must travel in the URL query string (`/api/chat/stream?session_id=<id>`).
+
+A Lingua session maps to exactly one OpenCode session (lazily created on first prompt, stored in Redis as `opencode_session:{session_id}`). Workspace switches do NOT regenerate the Lingua session ID, but they DO invalidate the OpenCode session mapping (each project gets its own OpenCode conversation).
+
+---
+
 ## Environment Variables
 
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
 | `OPENROUTER_API_KEY` | Yes | — | LLM API key (OpenRouter) |
-| `BOOTSTRAP_REPO_URL` | Yes | — | Git repo cloned into `/project` at boot. Must contain a Vite scaffold + `.opencode/` config. Compose fails if unset. |
-| `TARGET_REPO_URL` | No | — | Push destination for Publish. If unset, the user is prompted at session start. |
-| `GITHUB_TOKEN` | No | — | PAT with `repo` scope. Required for private bootstrap clones and pushing to target. Never embedded in remote URLs. |
+| `BOOTSTRAP_REPO_URL` | Yes | — | Git repo cloned into per-project subdir on first workspace switch. Must contain Vite scaffold. MUST NOT contain `.opencode/`. |
+| `AGENT_CONFIG_REPO_URL` | Yes | — | Git repo cloned at workspace boot containing the Lingua-owned OpenCode config (`opencode.json`, skills, agents). Copied into `/project/.opencode/` on each workspace switch. See `07-agent-config.md`. |
+| `TARGET_REPO_URL` | No | — | Default push destination for Publish on newly-created projects |
+| `GITHUB_TOKEN` | No | — | PAT with `repo` scope. Required for private bootstrap/agent-config clones and pushing to targets. Never embedded in remote URLs. |
 | `GIT_USER_NAME` | No | `Lingua` | Git commit author name |
 | `GIT_USER_EMAIL` | No | `lingua@local` | Git commit author email |
 | `OPENCODE_URL` | No | `http://workspace:4096` | URL of OpenCode server (orchestrator → workspace) |
-| `PROJECT_DIR` | No | `/project` | Path to the project volume inside containers |
-| `AGENT_ENGINE` | No | `opencode` | Which agent engine to use: `opencode` or `pi` |
+| `REDIS_URL` | No | `redis://redis:6379/0` | Redis connection URL |
+| `PROJECT_DATA_DIR` | No | `/project-data` | Root of per-project subdirectories |
 
 ---
 
 ## Bootstrap Repo Contract
 
-The bootstrap repo is any git repo that Lingua clones into `/project`. It must contain:
+The bootstrap repo is the app scaffold cloned into `/project-data/{project_id}/` when a new project is created. It MUST contain:
 - `package.json` with Vite scaffold (React)
 - `src/App.tsx` as the entry point
-- `.opencode/` directory with `opencode.json` (LLM config, model, provider, MCP, agents)
 
-The bootstrap remote is renamed to `bootstrap` (push disabled). `TARGET_REPO_URL` becomes `origin`.
+It MUST NOT contain:
+- `.opencode/` directory — Lingua owns agent config separately and will overwrite it anyway
+
+After clone, the orchestrator:
+- Renames `origin` remote → `bootstrap` (push disabled)
+- If project has `target_url`, adds it as `origin` remote
+- Appends `.opencode/` to `.gitignore` (Lingua-owned config never gets committed)
+- Copies `/lingua-agent-config/*` → `/project-data/{project_id}/.opencode/`
+
+See `07-agent-config.md` for the agent-config repo contract.
+
+---
+
+## Concurrency Model — Single Active Session
+
+v1 supports **one active Lingua session at a time** (single-user dev tool). The currently active session owns the workspace symlink and OpenCode session.
+
+- Opening a second tab → second tab gets its own `session_id` but cannot run prompts until the user explicitly switches the active session
+- Workspace switching (project A → project B) preserves both projects' code in `/project-data/{id}/` and atomically swaps the `/project` symlink
+- See `04-project-management.md` for the switch flow
+
+Multi-user is a phase-2 concern: it would require per-session workspace containers or per-session subprocess isolation of OpenCode + Vite.
 
 ---
 
@@ -190,5 +263,7 @@ The bootstrap remote is renamed to `bootstrap` (push disabled). `TARGET_REPO_URL
 | Backend | FastAPI + `fastapi.responses.StreamingResponse` (SSE) |
 | OpenCode integration | `prompt_async` + `GET /session/{id}/event` — no polling |
 | Orchestration | LangGraph `astream_events()` + `adispatch_custom_event()` |
-| State | FastAPI in-memory session dict (or Redis for multi-process) |
-| Database | SQLite via `aiosqlite` (keep existing schema) |
+| Event transport | Redis Streams (`XADD`/`XREAD` with `Last-Event-ID` for replay) |
+| Session mapping | Redis key-value (`opencode_session:{id}`, `pending_question:{id}`) |
+| Frontend ↔ backend | Same-origin via nginx reverse proxy (no CORS) |
+| Database | SQLite via `aiosqlite` (project metadata only; events are in Redis) |
