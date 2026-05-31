@@ -1,15 +1,15 @@
 # Lingua — Glossary
 
-**Agent Engine** — The AI coding agent running inside Docker that edits `/project` files. Currently two options: OpenCode (HTTP API on port 4096) and PI (RPC subprocess). Selected via `AGENT_ENGINE` env var; fixed per container restart.
+**Agent** — The OpenCode coding agent running inside the workspace Docker container. Edits files in `/project` via LLM-driven tool calls (read, edit, write, bash).
 
-**Orchestrator** — The Python/Chainlit layer in `orchestrator/` that receives user messages, delegates to the Agent Engine via the LangGraph graph, and renders results as Chainlit steps.
+**Orchestrator** — The Python FastAPI backend. Hosts the LangGraph graph that drives the Agent and forwards events between the React shell (via SSE over Redis Streams) and OpenCode (via OpenCode's native SSE event stream).
 
-**LangGraph Graph** — `orchestrator/graph.py`. Single orchestration entry point for both engines. Routes to `forward_to_opencode` or `forward_to_pi` based on `AGENT_ENGINE`. Streams events back to the Orchestrator via `adispatch_custom_event`.
+**Session** — One conversation between a user and the Agent. Identified by a client-generated UUID stored in `localStorage["lingua_session_id"]`. Survives tab refresh. Maps to one OpenCode session (Redis key `opencode_session:{session_id}`).
 
-**Session** — One Chainlit browser session. Engine choice is fixed for its lifetime (env var). Conversation history lives in `cl.user_session`; destroyed on page reload.
+**Workspace** — The active Project's subdirectory inside `/project-data/`. Surfaced to OpenCode and Vite via the `/project` symlink. Swapped atomically on workspace switch.
 
-**RPC Mode** — PI's headless JSONL stdin/stdout protocol (`pi --mode rpc`). Bidirectional: Orchestrator writes prompt commands to stdin, reads event stream from stdout. Supports mid-run questions via follow-up stdin writes.
+**Project** — A named entry in the projects SQLite table pairing a Bootstrap Repo with an optional Target Repo. Has its own subdirectory under `/project-data/{project_id}/` that preserves code across workspace switches.
 
-**Bootstrap Repo** — External git repo cloned into `/project` on container boot. Carries the Vite scaffold and `.opencode/` agent config. Read-only inside the container (`bootstrap` remote, push disabled).
+**Bootstrap Repo** — External git repo cloned into a new Project's workspace subdirectory. Provides the Vite + React scaffold. MUST NOT contain `.opencode/` — Lingua owns that.
 
-**Target Repo** — Where session changes are committed and pushed (the `origin` remote). Set via `TARGET_REPO_URL` or prompted at session start.
+**Target Repo** — Where the Publish action pushes commits. The Project's `origin` remote.
