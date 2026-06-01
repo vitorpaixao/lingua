@@ -7,6 +7,7 @@ import type {
   SwitchSuccess,
   SwitchNeedsConfirm,
 } from '@/types/api';
+import { getSessionId } from '@/lib/sessionId';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -83,5 +84,9 @@ export const getActiveWorkspace = () =>
 export const switchWorkspace = (project_id: string, force = false) =>
   request<SwitchSuccess | SwitchNeedsConfirm>('/api/workspace/switch', {
     method: 'POST',
-    body: JSON.stringify({ project_id, force }),
+    body: JSON.stringify({
+      project_id,
+      force,
+      session_id: getSessionId(),
+    }),
   });

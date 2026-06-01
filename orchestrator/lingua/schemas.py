@@ -61,6 +61,7 @@ class ProjectPatch(BaseModel):
 class WorkspaceSwitchRequest(BaseModel):
     project_id: str
     force: bool = False
+    session_id: str | None = None
 
 
 class WorkspaceSwitchSuccess(BaseModel):

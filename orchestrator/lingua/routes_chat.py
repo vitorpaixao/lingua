@@ -54,11 +54,17 @@ async def _run_agent(session_id: str, prompt: str, is_answer: bool) -> None:
             name = event.get("name", "")
             data = event.get("data", {}) or {}
             payload = {"type": name, **data}
-            await store.add_event(session_id, payload)
             if name == "agent_question":
-                await store.set_pending_question(session_id)
+                request_id = data.get("__request_id") or ""
+                await store.set_pending_question(session_id, request_id)
+                # Strip internal marker before sending to client
+                client_payload = {k: v for k, v in payload.items() if k != "__request_id"}
+                await store.add_event(session_id, client_payload)
             elif name == "agent_response":
                 await store.clear_pending_question(session_id)
+                await store.add_event(session_id, payload)
+            else:
+                await store.add_event(session_id, payload)
     except Exception as exc:  # noqa: BLE001
         logger.exception("agent task crashed for session %s", session_id)
         await store.add_event(

@@ -62,11 +62,13 @@ async def switch_workspace(req: WorkspaceSwitchRequest):
     # Atomic symlink swap + agent-config refresh
     await wsm.switch(req.project_id)
 
-    # Invalidate session state tied to the previous project
-    # NOTE: per-session truncation requires knowing the session_id of every
-    # active browser tab. v1 single-active session model: clear active_workspace
-    # and let the next /api/chat call create a fresh OpenCode session via the
-    # graph's get_or_create_opencode_session.
+    # Invalidate session state tied to the previous project. Without this the
+    # next /api/chat call would reuse the previous project's OpenCode session
+    # ID (stored in Redis) instead of creating a fresh one. Also clears the
+    # event stream so old chat events don't bleed into the new project.
+    if req.session_id:
+        await store.truncate_session(req.session_id)
+
     await store.set_active_workspace(req.project_id)
     await projects.touch(req.project_id)
 

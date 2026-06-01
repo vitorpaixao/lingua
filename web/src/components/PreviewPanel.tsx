@@ -4,11 +4,22 @@ import { Flex, Spin, Typography } from 'antd';
 const POLL_INTERVAL_MS = 1500;
 const POLL_URL = '/preview/';
 
-export const PreviewPanel = forwardRef<HTMLIFrameElement, { onLoad?: () => void }>(
-  function PreviewPanel({ onLoad }, ref) {
+type Props = {
+  onLoad?: () => void;
+  /**
+   * Bumping this forces the iframe to unmount + remount, hard-reloading the
+   * preview. Used after a workspace switch so Vite re-evaluates from the
+   * newly-active /project subdir.
+   */
+  reloadKey?: number;
+};
+
+export const PreviewPanel = forwardRef<HTMLIFrameElement, Props>(
+  function PreviewPanel({ onLoad, reloadKey = 0 }, ref) {
     const [ready, setReady] = useState(false);
 
     useEffect(() => {
+      setReady(false);
       let cancelled = false;
       const tick = async () => {
         try {
@@ -30,7 +41,7 @@ export const PreviewPanel = forwardRef<HTMLIFrameElement, { onLoad?: () => void 
       return () => {
         cancelled = true;
       };
-    }, []);
+    }, [reloadKey]);
 
     if (!ready) {
       return (
@@ -51,6 +62,7 @@ export const PreviewPanel = forwardRef<HTMLIFrameElement, { onLoad?: () => void 
 
     return (
       <iframe
+        key={reloadKey}
         ref={ref}
         src="/preview/"
         title="Preview"

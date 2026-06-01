@@ -23,6 +23,7 @@ export function WorkspacePage() {
   const [loading, setLoading] = useState(true);
   const [pickMode, setPickMode] = useState(false);
   const [selections, setSelections] = useState<SelectionPayload[]>([]);
+  const [previewKey, setPreviewKey] = useState(0);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const previewPctRef = useRef<number>(loadPreviewPct());
@@ -42,7 +43,8 @@ export function WorkspacePage() {
         const active = await getActiveWorkspace();
         if (active.project_id !== proj.id) {
           await switchWorkspace(proj.id, true);
-          // No iframe reload here — PreviewPanel polls /preview/ until Vite is up
+          // Force iframe to unmount + remount so Vite re-evaluates the new project
+          setPreviewKey((k) => k + 1);
         }
       } catch {
         nav('/');
@@ -153,7 +155,11 @@ export function WorkspacePage() {
           defaultSize={`${initialPct}%`}
           collapsible={{ start: true }}
         >
-          <PreviewPanel ref={iframeRef} onLoad={onPreviewLoad} />
+          <PreviewPanel
+            ref={iframeRef}
+            onLoad={onPreviewLoad}
+            reloadKey={previewKey}
+          />
         </Splitter.Panel>
       </Splitter>
     </Flex>

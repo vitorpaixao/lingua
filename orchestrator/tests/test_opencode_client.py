@@ -1,7 +1,10 @@
-"""Tests for OpenCodeClient using respx to mock the OpenCode HTTP server.
+"""Tests for OpenCodeClient using respx to mock OpenCode's HTTP API.
 
-Each test builds an SSE response by emitting lines that match OpenCode's wire
-format. The client must consume them and produce the expected result dict.
+Events follow the REAL shape emitted on /event:
+- message.part.updated with properties.part (TextPart or ToolPart)
+- message.part.delta with properties.{messageID, partID, field, delta}
+- session.idle with properties.sessionID
+- question.asked with properties.{id, questions} (or tool-part with tool="question")
 """
 
 import json
@@ -10,13 +13,119 @@ import httpx
 import pytest
 import respx
 
-from lingua.opencode_client import QUESTION_DETECTED, OpenCodeClient
+from lingua.opencode_client import (
+    QUESTION_DETECTED,
+    QUESTION_REQUEST_ID,
+    OpenCodeClient,
+)
 
 BASE = "http://workspace:4096"
+SID = "ses_test_1"
 
 
-def sse(*events: dict) -> str:
-    """Serialize events as SSE `data: ...\\n\\n` lines."""
+def part_updated_text(text: str, part_id: str = "prt_t1") -> dict:
+    return {
+        "id": f"evt_{part_id}",
+        "type": "message.part.updated",
+        "properties": {
+            "sessionID": SID,
+            "time": 0,
+            "part": {
+                "id": part_id,
+                "sessionID": SID,
+                "messageID": "msg_1",
+                "type": "text",
+                "text": text,
+            },
+        },
+    }
+
+
+def part_updated_tool(
+    call_id: str,
+    tool: str,
+    status: str,
+    input: dict,
+    output: str = "",
+) -> dict:
+    state: dict = {"status": status, "input": input}
+    if status == "completed":
+        state["output"] = output
+    elif status == "error":
+        state["error"] = output
+    return {
+        "id": f"evt_tool_{call_id}",
+        "type": "message.part.updated",
+        "properties": {
+            "sessionID": SID,
+            "time": 0,
+            "part": {
+                "id": f"prt_{call_id}",
+                "sessionID": SID,
+                "messageID": "msg_1",
+                "type": "tool",
+                "callID": call_id,
+                "tool": tool,
+                "state": state,
+            },
+        },
+    }
+
+
+def part_delta(delta: str, part_id: str = "prt_t1") -> dict:
+    return {
+        "id": "evt_delta",
+        "type": "message.part.delta",
+        "properties": {
+            "sessionID": SID,
+            "messageID": "msg_1",
+            "partID": part_id,
+            "field": "text",
+            "delta": delta,
+        },
+    }
+
+
+def idle(session_id: str = SID) -> dict:
+    return {
+        "id": f"evt_idle_{session_id}",
+        "type": "session.idle",
+        "properties": {"sessionID": session_id},
+    }
+
+
+def question_tool_part(request_id: str, question: str, options: list[str]) -> dict:
+    return {
+        "id": "evt_q",
+        "type": "message.part.updated",
+        "properties": {
+            "sessionID": SID,
+            "time": 0,
+            "part": {
+                "id": "prt_q",
+                "sessionID": SID,
+                "messageID": "msg_1",
+                "type": "tool",
+                "callID": request_id,
+                "tool": "question",
+                "state": {
+                    "status": "running",
+                    "input": {
+                        "questions": [
+                            {
+                                "header": "Choose",
+                                "question": question,
+                                "options": [{"label": o} for o in options],
+                            }
+                        ]
+                    },
+                },
+            },
+        },
+    }
+
+
+def sse_body(*events: dict) -> str:
     return "".join(f"data: {json.dumps(ev)}\n\n" for ev in events)
 
 
@@ -25,46 +134,38 @@ def client() -> OpenCodeClient:
     return OpenCodeClient(base_url=BASE, timeout=5.0)
 
 
+# ---------- send_prompt event consumption ----------
+
+
 @respx.mock
 async def test_send_prompt_aggregates_text_and_files(client: OpenCodeClient):
-    respx.post(f"{BASE}/session/sess_1/prompt_async").mock(
+    respx.post(f"{BASE}/session/{SID}/prompt_async").mock(
         return_value=httpx.Response(204)
     )
-    body = sse(
-        {
-            "type": "message.part.updated",
-            "part": {
-                "id": "p1",
-                "type": "tool",
-                "tool": "read",
-                "state": {
-                    "status": "completed",
-                    "input": {"filePath": "src/App.tsx"},
-                    "output": "",
-                },
-            },
-        },
-        {
-            "type": "message.part.updated",
-            "part": {
-                "id": "p2",
-                "type": "tool",
-                "tool": "edit",
-                "state": {
-                    "status": "completed",
-                    "input": {"filePath": "src/App.tsx", "newString": "// changed"},
-                    "output": "ok",
-                },
-            },
-        },
-        {
-            "type": "message.part.updated",
-            "part": {"id": "p3", "type": "text", "text": "All done!"},
-        },
-        {"type": "message.completed"},
+    body = sse_body(
+        # tool: read src/App.tsx
+        part_updated_tool("c1", "read", "running", {"filePath": "src/App.tsx"}),
+        part_updated_tool("c1", "read", "completed", {"filePath": "src/App.tsx"}, "(loaded)"),
+        # tool: edit src/App.tsx
+        part_updated_tool(
+            "c2", "edit", "running",
+            {"filePath": "src/App.tsx", "newString": "// changed"},
+        ),
+        part_updated_tool(
+            "c2", "edit", "completed",
+            {"filePath": "src/App.tsx", "newString": "// changed"},
+            "ok",
+        ),
+        # text response
+        part_delta("All "),
+        part_delta("done!"),
+        part_updated_text("All done!"),
+        idle(),
     )
-    respx.get(f"{BASE}/session/sess_1/event").mock(
-        return_value=httpx.Response(200, content=body, headers={"content-type": "text/event-stream"})
+    respx.get(f"{BASE}/event").mock(
+        return_value=httpx.Response(
+            200, content=body, headers={"content-type": "text/event-stream"}
+        )
     )
 
     steps: list[dict] = []
@@ -72,11 +173,10 @@ async def test_send_prompt_aggregates_text_and_files(client: OpenCodeClient):
     async def on_step(s: dict) -> None:
         steps.append(s)
 
-    result = await client.send_prompt("sess_1", "do a thing", on_step)
+    result = await client.send_prompt(SID, "do a thing", on_step)
 
     assert result["text"] == "All done!"
     assert result["files_changed"] == ["src/App.tsx"]
-    # Steps emitted to caller: read, edit, text
     tools = [s["tool"] for s in steps]
     assert "read" in tools
     assert "edit" in tools
@@ -84,146 +184,201 @@ async def test_send_prompt_aggregates_text_and_files(client: OpenCodeClient):
 
 
 @respx.mock
-async def test_question_short_circuits(client: OpenCodeClient):
-    respx.post(f"{BASE}/session/sess_q/prompt_async").mock(
+async def test_question_via_tool_part_short_circuits(client: OpenCodeClient):
+    respx.post(f"{BASE}/session/{SID}/prompt_async").mock(
         return_value=httpx.Response(204)
     )
-    body = sse(
-        {
-            "type": "message.part.updated",
-            "part": {
-                "id": "p1",
-                "type": "tool",
-                "tool": "question",
-                "state": {
-                    "status": "running",
-                    "input": {
-                        "questions": [
-                            {
-                                "header": "Choose",
-                                "question": "Modal or drawer?",
-                                "options": [{"label": "Modal"}, {"label": "Drawer"}],
-                            }
-                        ]
-                    },
-                },
-            },
-        },
-        # These events come AFTER the question and should NOT be processed
-        {"type": "message.completed"},
+    body = sse_body(
+        question_tool_part("que_1", "Modal or drawer?", ["Modal", "Drawer"]),
+        # Events after question shouldn't be processed
+        idle(),
     )
-    respx.get(f"{BASE}/session/sess_q/event").mock(
-        return_value=httpx.Response(200, content=body, headers={"content-type": "text/event-stream"})
+    respx.get(f"{BASE}/event").mock(
+        return_value=httpx.Response(
+            200, content=body, headers={"content-type": "text/event-stream"}
+        )
     )
 
-    result = await client.send_prompt("sess_q", "hi")
+    result = await client.send_prompt(SID, "hi")
     assert result.get(QUESTION_DETECTED) is True
+    assert result[QUESTION_REQUEST_ID] == "que_1"
     assert result["question"]["question"] == "Modal or drawer?"
     assert result["question"]["header"] == "Choose"
     assert [o["label"] for o in result["question"]["options"]] == ["Modal", "Drawer"]
 
 
 @respx.mock
-async def test_send_answer_posts_message_and_resumes(client: OpenCodeClient):
-    msg_route = respx.post(f"{BASE}/session/sess_a/message").mock(
-        return_value=httpx.Response(204)
+async def test_send_question_reply_posts_and_resumes(client: OpenCodeClient):
+    reply_route = respx.post(f"{BASE}/question/que_1/reply").mock(
+        return_value=httpx.Response(200, json=True)
     )
-    body = sse(
-        {
-            "type": "message.part.updated",
-            "part": {"id": "p9", "type": "text", "text": "Resumed: ok"},
-        },
-        {"type": "message.completed"},
+    body = sse_body(
+        part_updated_text("Resumed: ok"),
+        idle(),
     )
-    respx.get(f"{BASE}/session/sess_a/event").mock(
-        return_value=httpx.Response(200, content=body, headers={"content-type": "text/event-stream"})
+    respx.get(f"{BASE}/event").mock(
+        return_value=httpx.Response(
+            200, content=body, headers={"content-type": "text/event-stream"}
+        )
     )
 
-    result = await client.send_answer("sess_a", "Modal")
-    assert msg_route.called
-    # The answer should NOT hit prompt_async — verify by asserting only /message was posted
+    result = await client.send_question_reply("que_1", "Modal", SID)
+    assert reply_route.called
     assert result["text"] == "Resumed: ok"
 
 
 @respx.mock
-async def test_extracts_file_changes_only_from_completed_writes(client: OpenCodeClient):
-    respx.post(f"{BASE}/session/sess_f/prompt_async").mock(
+async def test_extracts_file_changes_only_from_writes(client: OpenCodeClient):
+    respx.post(f"{BASE}/session/{SID}/prompt_async").mock(
         return_value=httpx.Response(204)
     )
-    body = sse(
-        # running write — should NOT be counted
-        {
-            "type": "message.part.updated",
-            "part": {
-                "id": "p1",
-                "type": "tool",
-                "tool": "write",
-                "state": {
-                    "status": "running",
-                    "input": {"filePath": "src/A.tsx"},
-                    "output": "",
-                },
-            },
-        },
-        # completed write — counted
-        {
-            "type": "message.part.updated",
-            "part": {
-                "id": "p2",
-                "type": "tool",
-                "tool": "write",
-                "state": {
-                    "status": "completed",
-                    "input": {"filePath": "src/B.tsx"},
-                    "output": "done",
-                },
-            },
-        },
-        {"type": "message.completed"},
+    body = sse_body(
+        # write that completes — should be counted
+        part_updated_tool("w1", "write", "completed", {"filePath": "src/B.tsx"}, "done"),
+        # read — should NOT be counted as file change
+        part_updated_tool("r1", "read", "completed", {"filePath": "src/A.tsx"}, "(loaded)"),
+        idle(),
     )
-    respx.get(f"{BASE}/session/sess_f/event").mock(
-        return_value=httpx.Response(200, content=body, headers={"content-type": "text/event-stream"})
+    respx.get(f"{BASE}/event").mock(
+        return_value=httpx.Response(
+            200, content=body, headers={"content-type": "text/event-stream"}
+        )
     )
 
-    result = await client.send_prompt("sess_f", "create files")
+    result = await client.send_prompt(SID, "create files")
     assert result["files_changed"] == ["src/B.tsx"]
 
 
 @respx.mock
-async def test_dedupes_repeated_completed_tool_updates(client: OpenCodeClient):
-    respx.post(f"{BASE}/session/sess_d/prompt_async").mock(
+async def test_ignores_events_for_other_sessions(client: OpenCodeClient):
+    respx.post(f"{BASE}/session/{SID}/prompt_async").mock(
         return_value=httpx.Response(204)
     )
-    # Same part id twice with completed status
-    same_part = {
-        "id": "p1",
-        "type": "tool",
-        "tool": "read",
-        "state": {
-            "status": "completed",
-            "input": {"filePath": "src/App.tsx"},
-            "output": "",
+    other_session_event = {
+        "id": "evt_other",
+        "type": "message.part.delta",
+        "properties": {
+            "sessionID": "ses_OTHER",
+            "messageID": "msg_x",
+            "partID": "prt_x",
+            "field": "text",
+            "delta": "noise",
         },
     }
-    body = sse(
-        {"type": "message.part.updated", "part": same_part},
-        {"type": "message.part.updated", "part": same_part},
-        {"type": "message.completed"},
+    body = sse_body(
+        other_session_event,
+        part_updated_text("real result"),
+        idle(),
     )
-    respx.get(f"{BASE}/session/sess_d/event").mock(
-        return_value=httpx.Response(200, content=body, headers={"content-type": "text/event-stream"})
+    respx.get(f"{BASE}/event").mock(
+        return_value=httpx.Response(
+            200, content=body, headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    result = await client.send_prompt(SID, "hi")
+    assert result["text"] == "real result"
+
+
+@respx.mock
+async def test_dedupes_repeated_completed_tool_part(client: OpenCodeClient):
+    """Same completed tool part arriving twice should emit one step."""
+    respx.post(f"{BASE}/session/{SID}/prompt_async").mock(
+        return_value=httpx.Response(204)
+    )
+    completed = part_updated_tool("c1", "read", "completed", {"filePath": "src/A.tsx"}, "(loaded)")
+    body = sse_body(completed, completed, idle())
+    respx.get(f"{BASE}/event").mock(
+        return_value=httpx.Response(
+            200, content=body, headers={"content-type": "text/event-stream"}
+        )
     )
 
     steps: list[dict] = []
-    await client.send_prompt("sess_d", "x", lambda s: steps.append(s) or _noop())
-    # Only one read step should be emitted
-    assert sum(1 for s in steps if s["tool"] == "read") == 1
+    await client.send_prompt(SID, "x", lambda s: steps.append(s) or _noop())
+    read_steps = [s for s in steps if s["tool"] == "read"]
+    assert len(read_steps) == 1
+
+
+@respx.mock
+async def test_tool_error_emits_failed_step(client: OpenCodeClient):
+    respx.post(f"{BASE}/session/{SID}/prompt_async").mock(
+        return_value=httpx.Response(204)
+    )
+    body = sse_body(
+        part_updated_tool(
+            "f1", "bash", "error",
+            {"command": "rm -rf /"},
+            "Operation not permitted",
+        ),
+        idle(),
+    )
+    respx.get(f"{BASE}/event").mock(
+        return_value=httpx.Response(
+            200, content=body, headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    steps: list[dict] = []
+    await client.send_prompt(SID, "x", lambda s: steps.append(s) or _noop())
+    bash_steps = [s for s in steps if s["tool"] == "bash"]
+    assert len(bash_steps) == 1
+    assert bash_steps[0]["status"] == "failed"
+    assert "Operation not permitted" in bash_steps[0]["output"]
+
+
+@respx.mock
+async def test_idle_without_progress_returns_aborted(client: OpenCodeClient):
+    respx.post(f"{BASE}/session/{SID}/prompt_async").mock(
+        return_value=httpx.Response(204)
+    )
+    body = sse_body(idle())  # only idle, no work events
+    respx.get(f"{BASE}/event").mock(
+        return_value=httpx.Response(
+            200, content=body, headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    result = await client.send_prompt(SID, "hi")
+    assert result.get("_aborted") is True
+    assert "did not produce any output" in result["text"]
 
 
 def _noop():
     async def f():
         pass
     return f()
+
+
+# ---------- session_exists ----------
+
+
+@respx.mock
+async def test_session_exists_returns_true_on_200(client: OpenCodeClient):
+    respx.get(f"{BASE}/session/sess_live").mock(
+        return_value=httpx.Response(200, json={"id": "sess_live"}),
+    )
+    assert await client.session_exists("sess_live") is True
+
+
+@respx.mock
+async def test_session_exists_returns_false_on_404(client: OpenCodeClient):
+    respx.get(f"{BASE}/session/sess_dead").mock(
+        return_value=httpx.Response(404),
+    )
+    assert await client.session_exists("sess_dead") is False
+
+
+@respx.mock
+async def test_session_exists_raises_on_500(client: OpenCodeClient):
+    respx.get(f"{BASE}/session/sess_oops").mock(
+        return_value=httpx.Response(500),
+    )
+    with pytest.raises(httpx.HTTPStatusError):
+        await client.session_exists("sess_oops")
+
+
+# ---------- create_session ----------
 
 
 @respx.mock

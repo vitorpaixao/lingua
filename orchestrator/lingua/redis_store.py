@@ -39,6 +39,10 @@ def _pending_question_key(session_id: str) -> str:
     return f"pending_question:{session_id}"
 
 
+def _question_request_key(session_id: str) -> str:
+    return f"question_request:{session_id}"
+
+
 def _history_key(session_id: str) -> str:
     return f"history:{session_id}"
 
@@ -135,14 +139,29 @@ class RedisStore:
 
     # ---------- pending question flag ----------
 
-    async def set_pending_question(self, session_id: str) -> None:
+    async def set_pending_question(
+        self, session_id: str, request_id: str | None = None
+    ) -> None:
         await self.redis.set(_pending_question_key(session_id), "1", ex=self.ttl)
+        if request_id:
+            await self.redis.set(
+                _question_request_key(session_id), request_id, ex=self.ttl
+            )
 
     async def has_pending_question(self, session_id: str) -> bool:
         return bool(await self.redis.exists(_pending_question_key(session_id)))
 
+    async def get_question_request_id(self, session_id: str) -> str | None:
+        val = await self.redis.get(_question_request_key(session_id))
+        if isinstance(val, bytes):
+            return val.decode()
+        return val
+
     async def clear_pending_question(self, session_id: str) -> None:
-        await self.redis.delete(_pending_question_key(session_id))
+        await self.redis.delete(
+            _pending_question_key(session_id),
+            _question_request_key(session_id),
+        )
 
     # ---------- history (conversation messages) ----------
 
@@ -185,5 +204,6 @@ class RedisStore:
             _stream_key(session_id),
             _opencode_session_key(session_id),
             _pending_question_key(session_id),
+            _question_request_key(session_id),
             _history_key(session_id),
         )
