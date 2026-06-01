@@ -1,0 +1,74 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: lingua-redis
+    command: ["redis-server", "--appendonly", "no", "--save", ""]
+    volumes:
+      - lingua-redis-data:/data
+    restart: unless-stopped
+
+  workspace:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile
+    container_name: lingua-workspace
+    volumes:
+      - lingua-project-data:/project-data
+      - lingua-agent-config:/lingua-agent-config
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:?OPENROUTER_API_KEY must be set in .env}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - GIT_USER_NAME=${GIT_USER_NAME:-Lingua}
+      - GIT_USER_EMAIL=${GIT_USER_EMAIL:-lingua@local}
+      - AGENT_CONFIG_REPO_URL=${AGENT_CONFIG_REPO_URL:-}
+      - AGENT_CONFIG_BRANCH=${AGENT_CONFIG_BRANCH:-main}
+      - AGENT_CONFIG_PULL_ALWAYS=${AGENT_CONFIG_PULL_ALWAYS:-false}
+      - PROJECT_DATA_DIR=/project-data
+      - AGENT_CONFIG_DIR=/lingua-agent-config
+      - PROJECT_SYMLINK=/project-data/active
+    restart: unless-stopped
+
+  orchestrator:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
+    container_name: lingua-orchestrator
+    volumes:
+      - lingua-project-data:/project-data
+      - lingua-orchestrator-data:/app/data
+    environment:
+      - OPENCODE_URL=http://workspace:4096
+      - REDIS_URL=redis://redis:6379/0
+      - PROJECT_DATA_DIR=/project-data
+      - PROJECT_SYMLINK=/project-data/active
+      - AGENT_CONFIG_DIR=/lingua-agent-config
+      - SQLITE_PATH=/app/data/lingua.db
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - GIT_USER_NAME=${GIT_USER_NAME:-Lingua}
+      - GIT_USER_EMAIL=${GIT_USER_EMAIL:-lingua@local}
+    depends_on:
+      - redis
+      - workspace
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: lingua-web
+    ports:
+      - "5173:80"
+    depends_on:
+      - orchestrator
+      - workspace
+    restart: unless-stopped
+
+volumes:
+  lingua-project-data:
+    name: lingua-project-data
+  lingua-agent-config:
+    name: lingua-agent-config
+  lingua-redis-data:
+    name: lingua-redis-data
+  lingua-orchestrator-data:
+    name: lingua-orchestrator-data

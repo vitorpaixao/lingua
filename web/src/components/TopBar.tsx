@@ -4,12 +4,11 @@ import {
   BranchesOutlined,
   CloudUploadOutlined,
   AimOutlined,
-  CloseCircleFilled,
   ArrowLeftOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { gitStatus, gitPublish } from '@/api/client';
-import type { GitStatus, SelectionPayload } from '@/types/api';
+import type { GitStatus } from '@/types/api';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
 const POLL_MS = 5000;
@@ -18,14 +17,10 @@ export function TopBar({
   projectName,
   pickMode,
   onTogglePick,
-  selection,
-  onClearSelection,
 }: {
   projectName: string;
   pickMode: boolean;
   onTogglePick: () => void;
-  selection: SelectionPayload | null;
-  onClearSelection: () => void;
 }) {
   const nav = useNavigate();
   const { message } = AntdApp.useApp();
@@ -86,19 +81,6 @@ export function TopBar({
       </Space>
 
       <Space>
-        {selection && (
-          <Tag
-            closable
-            closeIcon={<CloseCircleFilled />}
-            color="blue"
-            onClose={(e) => {
-              e.preventDefault();
-              onClearSelection();
-            }}
-          >
-            Selected: {selection.summary}
-          </Tag>
-        )}
         <Tooltip title={pickMode ? 'Disable picker (ESC)' : 'Click an element in the preview'}>
           <Button
             type={pickMode ? 'primary' : 'default'}

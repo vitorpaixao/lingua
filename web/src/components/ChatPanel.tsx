@@ -49,11 +49,13 @@ function roleFor(m: ChatMessage): 'user' | 'agent' {
 }
 
 export function ChatPanel({
-  selection,
-  onConsumeSelection,
+  selections,
+  onRemoveSelection,
+  onClearSelections,
 }: {
-  selection: SelectionPayload | null;
-  onConsumeSelection: () => void;
+  selections: SelectionPayload[];
+  onRemoveSelection: (index: number) => void;
+  onClearSelections: () => void;
 }) {
   const { message: toast } = AntdApp.useApp();
   const { token } = theme.useToken();
@@ -136,7 +138,7 @@ export function ChatPanel({
     const userId = `u-${Date.now()}`;
     const buildingId = `b-${Date.now()}`;
     activeBuildingId.current = buildingId;
-    const snapshot = selection;
+    const snapshot = selections;
     setMessages((prev) => [
       ...prev,
       { kind: 'user', id: userId, text },
@@ -151,19 +153,19 @@ export function ChatPanel({
       const res = await postChat({
         session_id: sessionId,
         prompt: text,
-        selection: snapshot ?? undefined,
+        selections: snapshot.length > 0 ? snapshot : undefined,
       });
       if (!('ok' in res) || res.ok === false) {
         toast.error('Server rejected the prompt');
         updateBuilding((s) => ({ ...s, status: 'error' }));
         return;
       }
-      if (snapshot) onConsumeSelection();
+      if (snapshot.length > 0) onClearSelections();
     } catch (err) {
       toast.error(`Failed: ${(err as Error).message}`);
       updateBuilding((s) => ({ ...s, status: 'error' }));
     }
-  }, [input, pendingQuestion, sessionId, selection, onConsumeSelection, toast, updateBuilding]);
+  }, [input, pendingQuestion, sessionId, selections, onClearSelections, toast, updateBuilding]);
 
   const sendAnswer = useCallback(
     async (answer: string) => {
@@ -229,6 +231,37 @@ export function ChatPanel({
           />
         ) : (
           <Sender
+            header={
+              <Sender.Header
+                title={`Selected (${selections.length})`}
+                open={selections.length > 0}
+                onOpenChange={(open) => {
+                  if (!open) onClearSelections();
+                }}
+                closable
+              >
+                <Flex wrap gap={8}>
+                  {selections.map((s, i) => (
+                    <Tag
+                      key={`${s.summary}-${i}`}
+                      closable
+                      onClose={(e) => {
+                        e.preventDefault();
+                        onRemoveSelection(i);
+                      }}
+                      color="blue"
+                    >
+                      {s.summary}
+                      {s.source ? (
+                        <Text type="secondary" style={{ marginLeft: 4 }}>
+                          · {s.source}
+                        </Text>
+                      ) : null}
+                    </Tag>
+                  ))}
+                </Flex>
+              </Sender.Header>
+            }
             value={input}
             onChange={setInput}
             onSubmit={sendPrompt}

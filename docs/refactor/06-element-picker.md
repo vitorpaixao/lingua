@@ -24,12 +24,48 @@ The selection is sent inline with `POST /api/chat` as an optional `selection` fi
 
 1. Click **Select** button in the top bar — cursor changes to crosshair, pick mode activates
 2. Hover over the preview — hovered elements get a blue outline
-3. Click an element — a chip appears in the top bar: `Selected: Button`
-4. Type a prompt ("make it red") and send
-5. The selection is sent inline with the prompt; the chip disappears
-6. The backend prepends the selection block to the prompt before dispatching to OpenCode
+3. Click an element — a chip is added to the `Sender.Header` panel above the input: `<ComponentName> · <source-path>`
+4. Pick mode auto-disables. Click **Select** again to pick another element — chips **accumulate**, not replace
+5. Click any chip's **×** to remove just that one selection
+6. Collapse the header panel (× on the panel itself) to clear ALL selections at once
+7. Type a prompt ("make them red") and send — ALL selections are sent inline as context; the panel auto-clears
+8. The backend prepends each selection's block to the prompt before dispatching to OpenCode
 
-Press **ESC** or click the chip's **×** to cancel without sending.
+Press **ESC** while picking to cancel without adding to the list.
+
+### Implementation note
+
+`ChatPanel.tsx` renders the chip list inside `Sender.Header` — the X-native primitive for "stuff attached to the next message":
+
+```tsx
+<Sender
+  header={
+    <Sender.Header
+      title={`Selected (${selections.length})`}
+      open={selections.length > 0}
+      onOpenChange={(open) => { if (!open) onClearSelections(); }}
+      closable
+    >
+      <Flex wrap gap={8}>
+        {selections.map((s, i) => (
+          <Tag
+            key={`${s.summary}-${i}`}
+            closable
+            onClose={(e) => { e.preventDefault(); onRemoveSelection(i); }}
+            color="blue"
+          >
+            {s.summary}
+            {s.source ? <Text type="secondary"> · {s.source}</Text> : null}
+          </Tag>
+        ))}
+      </Flex>
+    </Sender.Header>
+  }
+  ...
+/>
+```
+
+State (`SelectionPayload[]`) lives in `WorkspacePage`. Each postMessage from the picker iframe APPENDS to the array.
 
 ---
 
@@ -226,7 +262,8 @@ All fields except `summary` are optional. `summary` is used only for the chip la
 | File | Role |
 |------|------|
 | `web/src/pages/WorkspacePage.tsx` | Pick mode state, `selection` React state, postMessage listener, iframe ref, script injection |
-| `web/src/components/TopBar.tsx` | Select toggle button, selection chip with × dismiss |
+| `web/src/components/TopBar.tsx` | Select toggle button (chip is NOT here) |
+| `web/src/components/ChatPanel.tsx` | Renders the `Sender.Header` + closable chip list from the `selections` array |
 | `web/public/lingua-picker.js` | Picker script — hover outline, click capture, fiber walk, postMessage emit |
 | `web/vite.config.ts` | Proxy `/preview` → workspace:3000 with `ws: true` |
 | `orchestrator/app.py` | `POST /api/chat` accepts optional `selection`; `format_selection_block()` helper |

@@ -22,7 +22,7 @@ export function WorkspacePage() {
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [pickMode, setPickMode] = useState(false);
-  const [selection, setSelection] = useState<SelectionPayload | null>(null);
+  const [selections, setSelections] = useState<SelectionPayload[]>([]);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const previewPctRef = useRef<number>(loadPreviewPct());
@@ -42,10 +42,7 @@ export function WorkspacePage() {
         const active = await getActiveWorkspace();
         if (active.project_id !== proj.id) {
           await switchWorkspace(proj.id, true);
-          if (iframeRef.current) {
-            const src = iframeRef.current.src;
-            iframeRef.current.src = src;
-          }
+          // No iframe reload here — PreviewPanel polls /preview/ until Vite is up
         }
       } catch {
         nav('/');
@@ -64,7 +61,8 @@ export function WorkspacePage() {
       const data = e.data as { type?: string; payload?: SelectionPayload };
       if (!data || typeof data !== 'object') return;
       if (data.type === 'lingua:selection' && data.payload) {
-        setSelection(data.payload);
+        const picked = data.payload;
+        setSelections((prev) => [...prev, picked]);
         setPickMode(false);
         iframeRef.current?.contentWindow?.postMessage({ type: 'lingua:disable' }, '*');
       } else if (data.type === 'lingua:cancel') {
@@ -127,8 +125,6 @@ export function WorkspacePage() {
         projectName={project.name}
         pickMode={pickMode}
         onTogglePick={onTogglePick}
-        selection={selection}
-        onClearSelection={() => setSelection(null)}
       />
       <Splitter
         style={{ flex: 1, minHeight: 0 }}
@@ -144,8 +140,11 @@ export function WorkspacePage() {
       >
         <Splitter.Panel min="20%" defaultSize={`${100 - initialPct}%`}>
           <ChatPanel
-            selection={selection}
-            onConsumeSelection={() => setSelection(null)}
+            selections={selections}
+            onRemoveSelection={(i) =>
+              setSelections((prev) => prev.filter((_, idx) => idx !== i))
+            }
+            onClearSelections={() => setSelections([])}
           />
         </Splitter.Panel>
         <Splitter.Panel

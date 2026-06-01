@@ -28,7 +28,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export type ChatBody = {
   session_id: string;
   prompt: string;
-  selection?: SelectionPayload;
+  selections?: SelectionPayload[];
 };
 
 export function postChat(body: ChatBody) {

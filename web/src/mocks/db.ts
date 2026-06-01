@@ -37,9 +37,9 @@ function seed(): Project[] {
     },
     {
       id: 'demo-todo',
-      name: 'Todo Sample',
-      bootstrap_url: 'https://github.com/example/vite-react-todo',
-      target_url: null,
+      name: 'Booststrap',
+      bootstrap_url: 'https://github.com/vitorpaixao/lingua--bootstrap',
+      target_url: 'https://github.com/vitorpaixao/lingua--app01',
       created_at: now,
       last_opened_at: null,
       status: 'active',
