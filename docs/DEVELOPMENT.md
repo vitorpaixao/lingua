@@ -224,6 +224,40 @@ The CONTEXT.md glossary is also editable directly.
 
 ---
 
+## Debugging the OpenCode conversation
+
+Lingua's orchestrator emits a structured log of every prompt sent to OpenCode and every relevant event received. Tail it with:
+
+```bash
+docker compose logs -f orchestrator | grep -E '\[→OC\]|\[←OC\]'
+```
+
+Example output during a single chat turn:
+
+```
+[→OC] POST /session/ses_xxx/prompt_async  "[Selected element from preview…]…" (210 chars)
+[←OC] ses_xxx text-delta "I'll change " (+12, total=12)
+[←OC] ses_xxx text-delta "the title in src/App.tsx" (+24, total=36)
+[←OC] ses_xxx tool read       started  input={"filePath":"src/App.tsx"}
+[←OC] ses_xxx tool read       completed  output=…
+[←OC] ses_xxx tool edit       started  input={"filePath":"src/App.tsx",…}
+[←OC] ses_xxx tool edit       completed  output=ok
+[←OC] ses_xxx text-final "Done. Changed the title from Lingua to Bootstrap." (51 chars)
+[←OC] ses_xxx idle (turn end)
+```
+
+For just transitions (no streaming deltas):
+```bash
+docker compose logs -f orchestrator | grep -E '\[→OC\]|\[←OC\] [a-z_]+ (tool|text-final|idle|QUESTION|ABORTED)'
+```
+
+For OpenCode's own internal log (LLM round-trip, tool dispatch, etc):
+```bash
+docker compose exec workspace sh -c "tail -f /root/.local/share/opencode/log/*.log | grep -v 'file.watcher\|file.edited'"
+```
+
+---
+
 ## Useful Commands Reference
 
 ```bash
