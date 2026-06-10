@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
 
 from redis.asyncio import Redis
 
 from lingua.config import Settings
+from lingua.engine import Engine
 from lingua.opencode_client import OpenCodeClient
+from lingua.opencode_engine import OpenCodeEngine
 from lingua.projects import ProjectStore
 from lingua.redis_store import RedisStore
 from lingua.workspace import WorkspaceManager
+
+logger = logging.getLogger("lingua.deps")
 
 
 @lru_cache(maxsize=1)
@@ -39,6 +44,25 @@ def get_store() -> RedisStore:
 @lru_cache(maxsize=1)
 def get_opencode_client() -> OpenCodeClient:
     return OpenCodeClient(base_url=get_settings().opencode_url)
+
+
+@lru_cache(maxsize=1)
+def get_engine() -> Engine:
+    """Return the agent engine selected by `AGENT_ENGINE` (default: opencode)."""
+    settings = get_settings()
+    if settings.agent_engine == "deepagents":
+        # Imported lazily so the heavy deepagents/langchain stack only loads when selected.
+        from lingua.deepagents_engine import DeepAgentsEngine
+
+        if not settings.openrouter_api_key:
+            logger.warning(
+                "AGENT_ENGINE=deepagents but OPENROUTER_API_KEY is unset; "
+                "model calls will fail."
+            )
+        logger.info("Agent engine: deepagents (model=%s)", settings.deepagents_model)
+        return DeepAgentsEngine(settings)
+    logger.info("Agent engine: opencode")
+    return OpenCodeEngine(get_opencode_client(), get_store())
 
 
 @lru_cache(maxsize=1)

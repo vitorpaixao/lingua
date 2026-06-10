@@ -5,12 +5,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Header, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
-from lingua.deps import get_opencode_client, get_store
+from lingua.deps import get_engine, get_store
 from lingua.graph import build_graph
 from lingua.schemas import AnswerRequest, ChatRequest, OkResponse
 from lingua.selection import prepend_selections
@@ -20,7 +20,7 @@ router = APIRouter()
 
 
 def _build_compiled_graph():
-    return build_graph(get_opencode_client(), get_store())
+    return build_graph(get_engine())
 
 
 _GRAPH = None

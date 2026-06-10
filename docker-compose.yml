@@ -46,6 +46,12 @@ services:
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - GIT_USER_NAME=${GIT_USER_NAME:-Lingua}
       - GIT_USER_EMAIL=${GIT_USER_EMAIL:-lingua@local}
+      # Agent engine: "opencode" (default) | "deepagents". deepagents runs in-process
+      # in the orchestrator and reuses OPENROUTER_API_KEY + the workspace exec bridge.
+      - AGENT_ENGINE=${AGENT_ENGINE:-opencode}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - DEEPAGENTS_MODEL=${DEEPAGENTS_MODEL:-anthropic/claude-sonnet-4.5}
+      - EXEC_URL=http://workspace:4097
     depends_on:
       - redis
       - workspace

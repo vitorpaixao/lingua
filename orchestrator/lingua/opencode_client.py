@@ -25,18 +25,17 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
 
+# Constants live in `engine` so both engines share them; re-exported here for back-compat.
+from lingua.engine import QUESTION_DETECTED, QUESTION_REQUEST_ID, OnStep
+
 logger = logging.getLogger("lingua.opencode")
 io_logger = logging.getLogger("lingua.opencode.io")
 
-QUESTION_DETECTED = "_question_detected"
-QUESTION_REQUEST_ID = "_question_request_id"
-
-OnStep = Callable[[dict[str, Any]], Awaitable[None]]
+__all__ = ["OpenCodeClient", "QUESTION_DETECTED", "QUESTION_REQUEST_ID", "OnStep"]
 
 
 def _trunc(s: Any, n: int = 120) -> str:

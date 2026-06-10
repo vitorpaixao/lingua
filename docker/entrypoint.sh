@@ -66,7 +66,13 @@ echo "==> Starting OpenCode server on :4096"
 opencode serve --hostname 0.0.0.0 --port 4096 &
 OPENCODE_PID=$!
 
-trap "kill $OPENCODE_PID 2>/dev/null; exit 0" SIGTERM SIGINT
+# Exec bridge: lets the deepagents engine (running in the orchestrator) run shell commands
+# here, co-located with node/npm/node_modules. Harmless when AGENT_ENGINE=opencode.
+echo "==> Starting exec bridge on :4097"
+PROJECT_SYMLINK="$PROJECT_SYMLINK" node /exec_server.mjs &
+EXEC_PID=$!
+
+trap "kill $OPENCODE_PID $EXEC_PID 2>/dev/null; exit 0" SIGTERM SIGINT
 
 if [ -f package.json ]; then
   echo "==> Copying Lingua Vite override into project"
