@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { Bubble, Sender } from '@ant-design/x';
+import { Bubble, Sender, Think, ThoughtChain } from '@ant-design/x';
 import {
   Avatar,
   Button,
   Card,
-  Collapse,
   Flex,
   Input,
   Space,
@@ -41,8 +40,7 @@ type BuildingState = {
 
 type ChatMessage =
   | { kind: 'user'; id: string; text: string }
-  | { kind: 'building'; id: string; state: BuildingState }
-  | { kind: 'agent-text'; id: string; text: string; files?: string[] };
+  | { kind: 'building'; id: string; state: BuildingState };
 
 function roleFor(m: ChatMessage): 'user' | 'agent' {
   return m.kind === 'user' ? 'user' : 'agent';
@@ -109,11 +107,6 @@ export function ChatPanel({
           finalText: ev.text,
           files: ev.files,
         }));
-        const responseId = `r-${Date.now()}`;
-        setMessages((prev) => [
-          ...prev,
-          { kind: 'agent-text', id: responseId, text: ev.text, files: ev.files },
-        ]);
         activeBuildingId.current = null;
       }
     },
@@ -280,20 +273,6 @@ function renderContent(m: ChatMessage, sendAnswer: (a: string) => void) {
   if (m.kind === 'user') {
     return m.text;
   }
-  if (m.kind === 'agent-text') {
-    return (
-      <Flex vertical gap={4} style={{ width: '100%' }}>
-        <Text>{m.text}</Text>
-        {m.files && m.files.length > 0 && (
-          <Space wrap size={4}>
-            {m.files.map((f) => (
-              <Tag key={f}>{f}</Tag>
-            ))}
-          </Space>
-        )}
-      </Flex>
-    );
-  }
   return <BuildingBubble state={m.state} onAnswer={sendAnswer} />;
 }
 
@@ -304,78 +283,74 @@ function BuildingBubble({
   state: BuildingState;
   onAnswer: (a: string) => void;
 }) {
-  const header =
-    state.status === 'needs-input'
-      ? 'Needs input · Waiting for your answer'
-      : state.status === 'done'
-      ? `Done${state.files?.length ? ` · Changed: ${state.files.join(', ')}` : ''}`
-      : state.status === 'error'
-      ? 'Error'
-      : `Building… (${state.steps.length} action${state.steps.length === 1 ? '' : 's'})`;
-
-  const items = [
-    {
-      key: 'main',
-      label: header,
-      children: (
-        <Flex vertical gap={6} style={{ width: '100%' }}>
-          {state.thinking && (
-            <Card size="small">
-              <Text type="secondary" style={{ fontSize: 12 }}>Thinking</Text>
-              <br />
-              <Text>{state.thinking}</Text>
-            </Card>
-          )}
-          {state.steps.map((s) => (
-            <Card key={s.id} size="small">
-              <Text strong>{s.label}</Text>
-              {s.output && (
-                <>
-                  <br />
-                  <Text type="secondary" style={{ fontSize: 12 }}>{s.output}</Text>
-                </>
-              )}
-            </Card>
-          ))}
-          {state.question && (
-            <Card size="small">
-              {state.question.header && (
-                <>
-                  <Text strong>{state.question.header}</Text>
-                  <br />
-                </>
-              )}
-              <Text>{state.question.question}</Text>
-              <br />
-              <Space wrap style={{ marginTop: 8 }}>
-                {state.question.options.length > 0 ? (
-                  state.question.options.map((opt) => (
-                    <Button
-                      key={opt.label}
-                      type="default"
-                      onClick={() => onAnswer(opt.label)}
-                    >
-                      {opt.label}
-                    </Button>
-                  ))
-                ) : (
-                  <Button type="default" onClick={() => onAnswer('continue')}>
-                    Continue
-                  </Button>
-                )}
-              </Space>
-            </Card>
-          )}
-        </Flex>
-      ),
-    },
-  ];
+  const active = state.status === 'building' || state.status === 'needs-input';
 
   return (
-    <Collapse
-      items={items}
-      defaultActiveKey={state.status === 'building' || state.status === 'needs-input' ? ['main'] : []}
-      size="small"
-    />
+    <Flex vertical gap={8} style={{ width: '100%' }}>
+      {(state.thinking || state.steps.length > 0) && (
+        <Think
+          title={active ? 'Thinking…' : 'Thought'}
+          loading={state.status === 'building'}
+          defaultExpanded={active}
+        >
+          <Flex vertical gap={8} style={{ width: '100%' }}>
+            {state.thinking && <Text>{state.thinking}</Text>}
+            {state.steps.length > 0 && (
+              <ThoughtChain
+                items={state.steps.map((s) => ({
+                  key: s.id,
+                  title: s.label,
+                  status: s.status === 'streaming' ? 'loading' : 'success',
+                  collapsible: Boolean(s.output),
+                  content: s.output ? (
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {s.output}
+                    </Text>
+                  ) : undefined,
+                }))}
+              />
+            )}
+          </Flex>
+        </Think>
+      )}
+      {state.question && (
+        <Card size="small">
+          {state.question.header && (
+            <>
+              <Text strong>{state.question.header}</Text>
+              <br />
+            </>
+          )}
+          <Text>{state.question.question}</Text>
+          <br />
+          <Space wrap style={{ marginTop: 8 }}>
+            {state.question.options.length > 0 ? (
+              state.question.options.map((opt) => (
+                <Button key={opt.label} type="default" onClick={() => onAnswer(opt.label)}>
+                  {opt.label}
+                </Button>
+              ))
+            ) : (
+              <Button type="default" onClick={() => onAnswer('continue')}>
+                Continue
+              </Button>
+            )}
+          </Space>
+        </Card>
+      )}
+      {state.status === 'done' && (
+        <Flex vertical gap={4}>
+          {state.finalText && <Text>{state.finalText}</Text>}
+          {state.files?.length ? (
+            <Space wrap size={4}>
+              {state.files.map((f) => (
+                <Tag key={f}>{f}</Tag>
+              ))}
+            </Space>
+          ) : null}
+        </Flex>
+      )}
+      {state.status === 'error' && <Text type="danger">Something went wrong.</Text>}
+    </Flex>
   );
 }
