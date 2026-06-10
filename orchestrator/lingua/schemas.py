@@ -20,13 +20,13 @@ class SelectionPayload(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    session_id: str
+    conversation_id: str
     prompt: str
     selections: list[SelectionPayload] | None = None
 
 
 class AnswerRequest(BaseModel):
-    session_id: str
+    conversation_id: str
     answer: str
 
 
@@ -61,7 +61,19 @@ class ProjectPatch(BaseModel):
 class WorkspaceSwitchRequest(BaseModel):
     project_id: str
     force: bool = False
-    session_id: str | None = None
+
+
+# ---------- conversations ----------
+
+
+class ConversationCreate(BaseModel):
+    project_id: str
+    title: str | None = None
+
+
+class ConversationPatch(BaseModel):
+    title: str | None = None
+    status: Literal["active", "archived"] | None = None
 
 
 class WorkspaceSwitchSuccess(BaseModel):

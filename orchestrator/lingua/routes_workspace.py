@@ -62,12 +62,9 @@ async def switch_workspace(req: WorkspaceSwitchRequest):
     # Atomic symlink swap + agent-config refresh
     await wsm.switch(req.project_id)
 
-    # Invalidate session state tied to the previous project. Without this the
-    # next /api/chat call would reuse the previous project's OpenCode session
-    # ID (stored in Redis) instead of creating a fresh one. Also clears the
-    # event stream so old chat events don't bleed into the new project.
-    if req.session_id:
-        await store.truncate_session(req.session_id)
+    # NOTE: no session truncation here. Chat state is keyed per Conversation (durable
+    # in SQLite), so switching Projects must never destroy another's history. Each
+    # Conversation owns its own OpenCode session; there is no cross-project bleed.
 
     await store.set_active_workspace(req.project_id)
     await projects.touch(req.project_id)

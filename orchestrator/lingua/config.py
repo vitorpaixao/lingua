@@ -22,6 +22,7 @@ class Settings:
     agent_engine: str
     openrouter_api_key: str | None
     deepagents_model: str
+    deepagents_checkpoint_path: Path
     exec_url: str
 
     @classmethod
@@ -45,6 +46,12 @@ class Settings:
             openrouter_api_key=os.getenv("OPENROUTER_API_KEY") or None,
             deepagents_model=os.getenv(
                 "DEEPAGENTS_MODEL", "anthropic/claude-sonnet-4.5"
+            ),
+            deepagents_checkpoint_path=Path(
+                os.getenv(
+                    "DEEPAGENTS_CHECKPOINT_PATH",
+                    "/app/data/deepagents-checkpoints.db",
+                )
             ),
             exec_url=os.getenv("EXEC_URL", "http://workspace:4097"),
         )

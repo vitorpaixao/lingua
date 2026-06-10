@@ -8,6 +8,16 @@ export type Project = {
   status: 'active' | 'archived';
 };
 
+export type Conversation = {
+  id: string;
+  project_id: string;
+  title: string;
+  status: 'active' | 'archived';
+  engine_session: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type GitStatus =
   | { ok: false; reason: string }
   | {

@@ -15,6 +15,9 @@ services:
     volumes:
       - lingua-project-data:/project-data
       - lingua-agent-config:/lingua-agent-config
+      # Persist OpenCode's session data so a Conversation's agent memory survives
+      # container recreation (docker compose down/up).
+      - lingua-opencode-data:/root/.local/share/opencode
     environment:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:?OPENROUTER_API_KEY must be set in .env}
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
@@ -78,3 +81,5 @@ volumes:
     name: lingua-redis-data
   lingua-orchestrator-data:
     name: lingua-orchestrator-data
+  lingua-opencode-data:
+    name: lingua-opencode-data

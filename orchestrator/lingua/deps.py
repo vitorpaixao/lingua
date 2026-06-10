@@ -8,6 +8,7 @@ from functools import lru_cache
 from redis.asyncio import Redis
 
 from lingua.config import Settings
+from lingua.conversations import ConversationStore
 from lingua.engine import Engine
 from lingua.opencode_client import OpenCodeClient
 from lingua.opencode_engine import OpenCodeEngine
@@ -62,12 +63,17 @@ def get_engine() -> Engine:
         logger.info("Agent engine: deepagents (model=%s)", settings.deepagents_model)
         return DeepAgentsEngine(settings)
     logger.info("Agent engine: opencode")
-    return OpenCodeEngine(get_opencode_client(), get_store())
+    return OpenCodeEngine(get_opencode_client(), get_conversations(), get_store())
 
 
 @lru_cache(maxsize=1)
 def get_projects() -> ProjectStore:
     return ProjectStore(get_settings().sqlite_path)
+
+
+@lru_cache(maxsize=1)
+def get_conversations() -> ConversationStore:
+    return ConversationStore(get_settings().sqlite_path)
 
 
 @lru_cache(maxsize=1)

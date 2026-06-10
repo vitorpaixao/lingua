@@ -3,8 +3,15 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Flex, Spin, Splitter } from 'antd';
 import { TopBar } from '@/components/TopBar';
 import { ChatPanel } from '@/components/ChatPanel';
+import { ConversationSidebar } from '@/components/ConversationSidebar';
 import { PreviewPanel } from '@/components/PreviewPanel';
-import { getProject, getActiveWorkspace, switchWorkspace } from '@/api/client';
+import {
+  getProject,
+  getActiveWorkspace,
+  switchWorkspace,
+  listConversations,
+  createConversation,
+} from '@/api/client';
 import type { Project, SelectionPayload } from '@/types/api';
 
 const DRAG_KEY = 'lingua_preview_width';
@@ -18,6 +25,14 @@ export function WorkspacePage() {
   const [params] = useSearchParams();
   const nav = useNavigate();
   const projectId = params.get('id');
+  const conversationId = params.get('c');
+
+  const selectConversation = useCallback(
+    (id: string) => {
+      if (projectId) nav(`/workspace?id=${projectId}&c=${id}`);
+    },
+    [projectId, nav],
+  );
 
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
@@ -56,6 +71,26 @@ export function WorkspacePage() {
       cancelled = true;
     };
   }, [projectId, nav]);
+
+  // Ensure a conversation is selected: default to the most-recent, or create one.
+  useEffect(() => {
+    if (!projectId || conversationId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await listConversations(projectId);
+        if (cancelled) return;
+        const target = list[0] ?? (await createConversation(projectId));
+        if (cancelled) return;
+        nav(`/workspace?id=${projectId}&c=${target.id}`, { replace: true });
+      } catch {
+        // leave unselected; sidebar can create one
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, conversationId, nav]);
 
   // postMessage listener for picker
   useEffect(() => {
@@ -128,40 +163,56 @@ export function WorkspacePage() {
         pickMode={pickMode}
         onTogglePick={onTogglePick}
       />
-      <Splitter
-        style={{ flex: 1, minHeight: 0 }}
-        onResizeEnd={(sizes) => {
-          // sizes is an array of pixel sizes; convert the second panel to %
-          const total = sizes[0] + sizes[1];
-          if (total > 0) {
-            const pct = Math.round((sizes[1] / total) * 100);
-            previewPctRef.current = pct;
-            window.localStorage.setItem(DRAG_KEY, String(pct));
-          }
-        }}
-      >
-        <Splitter.Panel min="20%" defaultSize={`${100 - initialPct}%`}>
-          <ChatPanel
-            selections={selections}
-            onRemoveSelection={(i) =>
-              setSelections((prev) => prev.filter((_, idx) => idx !== i))
+      <Flex flex={1} style={{ minHeight: 0 }}>
+        <div style={{ flex: '0 0 auto', minHeight: 0 }}>
+          <ConversationSidebar
+            projectId={project.id}
+            activeId={conversationId}
+            onSelect={selectConversation}
+          />
+        </div>
+        <Splitter
+          style={{ flex: 1, minHeight: 0 }}
+          onResizeEnd={(sizes) => {
+            // sizes is an array of pixel sizes; convert the second panel to %
+            const total = sizes[0] + sizes[1];
+            if (total > 0) {
+              const pct = Math.round((sizes[1] / total) * 100);
+              previewPctRef.current = pct;
+              window.localStorage.setItem(DRAG_KEY, String(pct));
             }
-            onClearSelections={() => setSelections([])}
-          />
-        </Splitter.Panel>
-        <Splitter.Panel
-          min="20%"
-          max="80%"
-          defaultSize={`${initialPct}%`}
-          collapsible={{ start: true }}
+          }}
         >
-          <PreviewPanel
-            ref={iframeRef}
-            onLoad={onPreviewLoad}
-            reloadKey={previewKey}
-          />
-        </Splitter.Panel>
-      </Splitter>
+          <Splitter.Panel min="20%" defaultSize={`${100 - initialPct}%`}>
+            {conversationId ? (
+              <ChatPanel
+                conversationId={conversationId}
+                selections={selections}
+                onRemoveSelection={(i) =>
+                  setSelections((prev) => prev.filter((_, idx) => idx !== i))
+                }
+                onClearSelections={() => setSelections([])}
+              />
+            ) : (
+              <Flex justify="center" align="center" style={{ height: '100%' }}>
+                <Spin />
+              </Flex>
+            )}
+          </Splitter.Panel>
+          <Splitter.Panel
+            min="20%"
+            max="80%"
+            defaultSize={`${initialPct}%`}
+            collapsible={{ start: true }}
+          >
+            <PreviewPanel
+              ref={iframeRef}
+              onLoad={onPreviewLoad}
+              reloadKey={previewKey}
+            />
+          </Splitter.Panel>
+        </Splitter>
+      </Flex>
     </Flex>
   );
 }

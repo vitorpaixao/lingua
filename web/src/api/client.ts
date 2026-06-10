@@ -1,5 +1,6 @@
 import type {
   Project,
+  Conversation,
   GitStatus,
   PublishResult,
   SelectionPayload,
@@ -7,7 +8,6 @@ import type {
   SwitchSuccess,
   SwitchNeedsConfirm,
 } from '@/types/api';
-import { getSessionId } from '@/lib/sessionId';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -27,7 +27,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 // ----- Chat -----
 
 export type ChatBody = {
-  session_id: string;
+  conversation_id: string;
   prompt: string;
   selections?: SelectionPayload[];
 };
@@ -39,12 +39,48 @@ export function postChat(body: ChatBody) {
   });
 }
 
-export function postAnswer(body: { session_id: string; answer: string }) {
+export function postAnswer(body: { conversation_id: string; answer: string }) {
   return request<{ ok: boolean }>('/api/chat/answer', {
     method: 'POST',
     body: JSON.stringify(body),
   });
 }
+
+// ----- Conversations -----
+
+export const listConversations = (projectId: string, includeArchived = false) =>
+  request<Conversation[]>(
+    `/api/projects/${projectId}/conversations${
+      includeArchived ? '?include_archived=true' : ''
+    }`,
+  );
+
+export const createConversation = (projectId: string, title?: string) =>
+  request<Conversation>('/api/conversations', {
+    method: 'POST',
+    body: JSON.stringify({ project_id: projectId, title }),
+  });
+
+export const getConversation = (id: string) =>
+  request<Conversation>(`/api/conversations/${id}`);
+
+export const renameConversation = (id: string, title: string) =>
+  request<Conversation>(`/api/conversations/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ title }),
+  });
+
+export const archiveConversation = (id: string) =>
+  request<Conversation>(`/api/conversations/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status: 'archived' }),
+  });
+
+export const deleteConversation = (id: string) =>
+  request<{ ok: boolean }>(`/api/conversations/${id}`, { method: 'DELETE' });
+
+export const getConversationEvents = (id: string) =>
+  request<Record<string, unknown>[]>(`/api/conversations/${id}/events`);
 
 // ----- Git -----
 
@@ -84,9 +120,5 @@ export const getActiveWorkspace = () =>
 export const switchWorkspace = (project_id: string, force = false) =>
   request<SwitchSuccess | SwitchNeedsConfirm>('/api/workspace/switch', {
     method: 'POST',
-    body: JSON.stringify({
-      project_id,
-      force,
-      session_id: getSessionId(),
-    }),
+    body: JSON.stringify({ project_id, force }),
   });

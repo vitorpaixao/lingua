@@ -27,7 +27,7 @@ logger = logging.getLogger("lingua.graph")
 
 
 class GraphState(TypedDict):
-    session_id: str
+    conversation_id: str
     prompt: str
     is_answer: bool
     messages: Annotated[list, add_messages]
@@ -41,7 +41,7 @@ def build_graph(engine: Engine):
     """
 
     async def forward(state: GraphState) -> dict[str, Any]:
-        session_id = state["session_id"]
+        conversation_id = state["conversation_id"]
         prompt = state["prompt"]
         is_answer = state.get("is_answer", False)
 
@@ -49,7 +49,7 @@ def build_graph(engine: Engine):
             await adispatch_custom_event("agent_step", step)
 
         try:
-            result = await engine.run(session_id, prompt, is_answer, on_step)
+            result = await engine.run(conversation_id, prompt, is_answer, on_step)
         except Exception as exc:  # noqa: BLE001
             logger.exception("Engine call failed")
             await adispatch_custom_event(

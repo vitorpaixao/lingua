@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { Bubble, Sender, Think, ThoughtChain } from '@ant-design/x';
 import {
@@ -28,9 +28,8 @@ import {
   CloseCircleOutlined,
 } from '@ant-design/icons';
 import type { AgentEvent, AgentQuestion, SelectionPayload } from '@/types/api';
-import { postChat, postAnswer } from '@/api/client';
+import { postChat, postAnswer, getConversationEvents } from '@/api/client';
 import { SSEConnection } from '@/lib/sseClient';
-import { getSessionId } from '@/lib/sessionId';
 
 const { Text } = Typography;
 
@@ -62,18 +61,115 @@ function roleFor(m: ChatMessage): 'user' | 'agent' {
   return m.kind === 'user' ? 'user' : 'agent';
 }
 
+/** Pure reducer: fold one agent event into a building message's state. Shared by the
+ *  live SSE handler and the transcript replay so both render identically. */
+function applyAgentEvent(s: BuildingState, ev: AgentEvent): BuildingState {
+  if (ev.type === 'agent_step') {
+    if (ev.tool === 'text') {
+      const partId = ev.part_id ?? 'text';
+      const text = ev.output ?? '';
+      const idx = s.entries.findIndex((e) => e.kind === 'text' && e.id === partId);
+      if (idx >= 0) {
+        const entries = [...s.entries];
+        entries[idx] = { kind: 'text', id: partId, text };
+        return { ...s, entries };
+      }
+      return { ...s, entries: [...s.entries, { kind: 'text', id: partId, text }] };
+    }
+    return {
+      ...s,
+      entries: [
+        ...s.entries,
+        {
+          kind: 'tool',
+          id: `${Date.now()}-${Math.random()}`,
+          tool: ev.tool,
+          label: ev.label,
+          output: ev.output,
+          status: ev.status,
+        },
+      ],
+    };
+  }
+  if (ev.type === 'agent_question') {
+    return { ...s, status: 'needs-input', question: ev };
+  }
+  if (ev.type === 'agent_response') {
+    // Drop the trailing text entry equal to the final answer (shown in the result area).
+    const entries = [...s.entries];
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const e = entries[i];
+      if (e.kind === 'text') {
+        if (e.text === ev.text) entries.splice(i, 1);
+        break;
+      }
+    }
+    return { ...s, status: 'done', finalText: ev.text, files: ev.files, entries };
+  }
+  return s;
+}
+
+type ReplayEvent =
+  | AgentEvent
+  | { type: 'user'; text: string; selections?: SelectionPayload[] | null };
+
+/** Rebuild the message list from a Conversation's durable event transcript. */
+function buildMessagesFromEvents(events: ReplayEvent[]): {
+  messages: ChatMessage[];
+  pendingQuestion: boolean;
+} {
+  const messages: ChatMessage[] = [];
+  let building: BuildingState | null = null;
+  let buildingId = '';
+  let i = 0;
+  const flush = () => {
+    if (building) {
+      messages.push({ kind: 'building', id: buildingId, state: building });
+      building = null;
+    }
+  };
+  for (const ev of events) {
+    if (ev.type === 'user') {
+      flush();
+      messages.push({ kind: 'user', id: `ru-${i}`, text: ev.text });
+      buildingId = `rb-${i}`;
+      const sels = ev.selections ?? [];
+      building = {
+        status: 'done', // a turn with no response stays collapsed, not spinning
+        entries:
+          sels.length > 0
+            ? [{ kind: 'selection', id: `rsel-${i}`, selections: sels }]
+            : [],
+      };
+    } else {
+      if (!building) {
+        buildingId = `rb-${i}`;
+        building = { status: 'done', entries: [] };
+      }
+      building = applyAgentEvent(building, ev as AgentEvent);
+    }
+    i++;
+  }
+  flush();
+  const last = messages[messages.length - 1];
+  const pendingQuestion =
+    !!last && last.kind === 'building' && last.state.status === 'needs-input';
+  return { messages, pendingQuestion };
+}
+
 export function ChatPanel({
+  conversationId,
   selections,
   onRemoveSelection,
   onClearSelections,
 }: {
+  conversationId: string;
   selections: SelectionPayload[];
   onRemoveSelection: (index: number) => void;
   onClearSelections: () => void;
 }) {
   const { message: toast } = AntdApp.useApp();
   const { token } = theme.useToken();
-  const sessionId = useMemo(() => getSessionId(), []);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [pendingQuestion, setPendingQuestion] = useState(false);
@@ -93,68 +189,43 @@ export function ChatPanel({
 
   const onEvent = useCallback(
     (ev: AgentEvent) => {
-      if (ev.type === 'agent_step') {
-        if (ev.tool === 'text') {
-          const partId = ev.part_id ?? 'text';
-          const text = ev.output ?? '';
-          updateBuilding((s) => {
-            const idx = s.entries.findIndex(
-              (e) => e.kind === 'text' && e.id === partId,
-            );
-            if (idx >= 0) {
-              const entries = [...s.entries];
-              entries[idx] = { kind: 'text', id: partId, text };
-              return { ...s, entries };
-            }
-            return { ...s, entries: [...s.entries, { kind: 'text', id: partId, text }] };
-          });
-        } else {
-          updateBuilding((s) => ({
-            ...s,
-            entries: [
-              ...s.entries,
-              {
-                kind: 'tool',
-                id: `${Date.now()}-${Math.random()}`,
-                tool: ev.tool,
-                label: ev.label,
-                output: ev.output,
-                status: ev.status,
-              },
-            ],
-          }));
-        }
-      } else if (ev.type === 'agent_question') {
-        setPendingQuestion(true);
-        updateBuilding((s) => ({ ...s, status: 'needs-input', question: ev }));
-      } else if (ev.type === 'agent_response') {
-        setPendingQuestion(false);
-        updateBuilding((s) => {
-          // Drop the trailing text entry that equals the final answer — it is
-          // the answer (shown in the result area), not part of the history.
-          const entries = [...s.entries];
-          for (let i = entries.length - 1; i >= 0; i--) {
-            const e = entries[i];
-            if (e.kind === 'text') {
-              if (e.text === ev.text) entries.splice(i, 1);
-              break;
-            }
-          }
-          return { ...s, status: 'done', finalText: ev.text, files: ev.files, entries };
-        });
-        activeBuildingId.current = null;
-      }
+      if (ev.type === 'agent_question') setPendingQuestion(true);
+      if (ev.type === 'agent_response') setPendingQuestion(false);
+      updateBuilding((s) => applyAgentEvent(s, ev));
+      if (ev.type === 'agent_response') activeBuildingId.current = null;
     },
     [updateBuilding],
   );
 
+  // Load the durable transcript, then stream live events — re-runs per conversation.
   useEffect(() => {
-    const conn = new SSEConnection(`/api/chat/stream?session_id=${sessionId}`, {
-      onEvent,
-    });
+    let cancelled = false;
+    activeBuildingId.current = null;
+    setMessages([]);
+    setPendingQuestion(false);
+    (async () => {
+      try {
+        const events = await getConversationEvents(conversationId);
+        if (cancelled) return;
+        const { messages: replayed, pendingQuestion: pq } = buildMessagesFromEvents(
+          events as unknown as Parameters<typeof buildMessagesFromEvents>[0],
+        );
+        setMessages(replayed);
+        setPendingQuestion(pq);
+      } catch {
+        // new/unknown conversation — start empty
+      }
+    })();
+    const conn = new SSEConnection(
+      `/api/chat/stream?conversation_id=${conversationId}`,
+      { onEvent },
+    );
     void conn.connect();
-    return () => conn.close();
-  }, [sessionId, onEvent]);
+    return () => {
+      cancelled = true;
+      conn.close();
+    };
+  }, [conversationId, onEvent]);
 
   const sendPrompt = useCallback(async () => {
     const text = input.trim();
@@ -183,7 +254,7 @@ export function ChatPanel({
     setInput('');
     try {
       const res = await postChat({
-        session_id: sessionId,
+        conversation_id: conversationId,
         prompt: text,
         selections: snapshot.length > 0 ? snapshot : undefined,
       });
@@ -197,7 +268,7 @@ export function ChatPanel({
       toast.error(`Failed: ${(err as Error).message}`);
       updateBuilding((s) => ({ ...s, status: 'error' }));
     }
-  }, [input, pendingQuestion, sessionId, selections, onClearSelections, toast, updateBuilding]);
+  }, [input, pendingQuestion, conversationId, selections, onClearSelections, toast, updateBuilding]);
 
   const sendAnswer = useCallback(
     async (answer: string) => {
@@ -210,12 +281,12 @@ export function ChatPanel({
       ]);
       updateBuilding((s) => ({ ...s, status: 'building', question: undefined }));
       try {
-        await postAnswer({ session_id: sessionId, answer });
+        await postAnswer({ conversation_id: conversationId, answer });
       } catch (err) {
         toast.error(`Failed: ${(err as Error).message}`);
       }
     },
-    [pendingQuestion, sessionId, toast, updateBuilding],
+    [pendingQuestion, conversationId, toast, updateBuilding],
   );
 
   const bubbleItems = messages.map((m) => ({

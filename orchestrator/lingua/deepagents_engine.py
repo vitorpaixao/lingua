@@ -79,18 +79,49 @@ class DeepAgentsEngine:
         self.symlink = str(settings.project_symlink)
         self.exec_url = settings.exec_url.rstrip("/")
 
-        model = ChatOpenAI(
+        self._model = ChatOpenAI(
             model=settings.deepagents_model,
             base_url=OPENROUTER_BASE_URL,
             api_key=settings.openrouter_api_key,
         )
+        # Built lazily on first run() so the durable async checkpointer can be opened
+        # inside an event loop. Tests use the pure helpers without an agent.
+        self.agent: Any = None
+        self._checkpointer_cm: Any = None
+
+    async def _ensure_agent(self) -> None:
+        """Build the deepagents graph once, with a durable per-Conversation checkpointer.
+
+        Memory is keyed by `thread_id = conversation_id`. We use `AsyncSqliteSaver` on the
+        durable SQLite volume so a Conversation's memory survives orchestrator restarts;
+        if that package is unavailable we fall back to in-memory (ephemeral) memory.
+        """
+        if self.agent is not None:
+            return
+        checkpointer: Any
+        try:
+            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+            path = self.settings.deepagents_checkpoint_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self._checkpointer_cm = AsyncSqliteSaver.from_conn_string(str(path))
+            checkpointer = await self._checkpointer_cm.__aenter__()
+            await checkpointer.setup()
+            logger.info("deepagents checkpointer: AsyncSqliteSaver at %s", path)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Durable checkpointer unavailable (%s); falling back to MemorySaver "
+                "(deepagents memory will not survive restarts).",
+                exc,
+            )
+            checkpointer = MemorySaver()
 
         self.agent = create_deep_agent(
-            model=model,
+            model=self._model,
             tools=[self._make_ask_user(), self._make_run_bash()],
             system_prompt=LINGUA_CODING_PROMPT,
             backend=self._backend_factory,
-            checkpointer=MemorySaver(),
+            checkpointer=checkpointer,
         )
 
     # ---------- backend (re-resolves the active-project symlink per call) ----------
@@ -137,12 +168,13 @@ class DeepAgentsEngine:
 
     async def run(
         self,
-        session_id: str,
+        conversation_id: str,
         prompt: str,
         is_answer: bool,
         on_step: OnStep | None = None,
     ) -> dict[str, Any]:
-        config = {"configurable": {"thread_id": session_id}}
+        await self._ensure_agent()
+        config = {"configurable": {"thread_id": conversation_id}}
         inp: Any = Command(resume=prompt) if is_answer else {
             "messages": [{"role": "user", "content": prompt}]
         }

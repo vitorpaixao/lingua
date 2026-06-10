@@ -31,12 +31,13 @@ EngineResult = dict[str, Any]
 
 
 class Engine(Protocol):
-    """Pluggable agent backend. Stateless across calls; per-session state lives in Redis
-    (OpenCode) or the checkpointer thread (deepagents), keyed by `session_id`."""
+    """Pluggable agent backend. Stateless across calls; per-conversation memory lives in
+    its native store (OpenCode session, or the deepagents checkpointer thread), keyed by
+    `conversation_id`."""
 
     async def run(
         self,
-        session_id: str,
+        conversation_id: str,
         prompt: str,
         is_answer: bool,
         on_step: OnStep | None = None,
@@ -44,7 +45,7 @@ class Engine(Protocol):
         """Drive one turn.
 
         Args:
-            session_id: Lingua session id (stable per browser session).
+            conversation_id: the Conversation this turn belongs to (the durable chat thread).
             prompt: the user's prompt, or — when `is_answer` is True — their answer to a
                 previously-asked clarifying question.
             is_answer: True when resuming a paused question rather than starting a new turn.
