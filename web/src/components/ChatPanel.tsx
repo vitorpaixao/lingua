@@ -325,6 +325,11 @@ function BuildingBubble({
   const { token } = theme.useToken();
   const active = state.status === 'building' || state.status === 'needs-input';
 
+  const [expanded, setExpanded] = useState(true);
+  useEffect(() => {
+    if (state.status === 'done' || state.status === 'error') setExpanded(false);
+  }, [state.status]);
+
   const entryIcon = (e: ProcessEntry): ReactNode => {
     if (e.kind === 'tool') {
       if (e.status === 'streaming')
@@ -365,7 +370,8 @@ function BuildingBubble({
         <Think
           title={active ? 'Thinking…' : 'Thought'}
           loading={state.status === 'building'}
-          defaultExpanded={active}
+          expanded={expanded}
+          onExpand={setExpanded}
         >
           <ThoughtChain
             items={state.entries.map((e) =>
