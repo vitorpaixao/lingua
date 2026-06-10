@@ -122,7 +122,7 @@ class OpenCodeClient:
     async def _consume_events(
         self, session_id: str, on_step: OnStep | None
     ) -> dict[str, Any]:
-        accumulated_text = ""
+        text_by_part: dict[str, str] = {}  # partID -> text so far (dict preserves order)
         files_changed: list[str] = []
         seen_completed_tool_parts: set[str] = set()
         saw_any_progress = False
@@ -191,21 +191,25 @@ class OpenCodeClient:
                     if etype == "message.part.delta":
                         if props.get("field") == "text":
                             delta = props.get("delta", "")
-                            if delta:
+                            part_id = props.get("partID", "")
+                            if delta and part_id:
                                 saw_any_progress = True
-                                accumulated_text += delta
+                                text_by_part[part_id] = (
+                                    text_by_part.get(part_id, "") + delta
+                                )
                                 io_logger.info(
-                                    '[←OC] %s text-delta "%s" (+%d, total=%d)',
+                                    '[←OC] %s text-delta "%s" (+%d, part=%s total=%d)',
                                     session_id, _trunc(delta, 60),
-                                    len(delta), len(accumulated_text),
+                                    len(delta), part_id, len(text_by_part[part_id]),
                                 )
                                 if on_step:
                                     await on_step({
                                         "tool": "text",
                                         "label": "Thinking",
                                         "input": {},
-                                        "output": accumulated_text,
+                                        "output": text_by_part[part_id],
                                         "status": "streaming",
+                                        "part_id": part_id,
                                     })
                         continue
 
@@ -216,22 +220,24 @@ class OpenCodeClient:
 
                         if ptype == "text":
                             full_text = part.get("text") or ""
-                            if full_text:
+                            part_id = part.get("id", "")
+                            if full_text and part_id:
                                 saw_any_progress = True
-                                if full_text != accumulated_text:
-                                    accumulated_text = full_text
+                                if text_by_part.get(part_id) != full_text:
+                                    text_by_part[part_id] = full_text
                                     io_logger.info(
-                                        '[←OC] %s text-final "%s" (%d chars)',
+                                        '[←OC] %s text-final "%s" (part=%s %d chars)',
                                         session_id, _trunc(full_text, 120),
-                                        len(full_text),
+                                        part_id, len(full_text),
                                     )
                                     if on_step:
                                         await on_step({
                                             "tool": "text",
                                             "label": "Thinking",
                                             "input": {},
-                                            "output": accumulated_text,
+                                            "output": full_text,
                                             "status": "streaming",
+                                            "part_id": part_id,
                                         })
                             continue
 
@@ -282,7 +288,8 @@ class OpenCodeClient:
                                 await on_step(step)
                             continue
 
-        return {"text": accumulated_text, "files_changed": files_changed}
+        final_text = list(text_by_part.values())[-1] if text_by_part else ""
+        return {"text": final_text, "files_changed": files_changed}
 
     # ---------- helpers ----------
 

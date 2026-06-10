@@ -38,7 +38,8 @@ export type AgentStep = {
   label: string;
   input?: Record<string, unknown>;
   output?: string;
-  status: 'completed' | 'streaming';
+  status: 'completed' | 'streaming' | 'failed';
+  part_id?: string;
 };
 
 export type AgentQuestion = {

@@ -184,6 +184,48 @@ async def test_send_prompt_aggregates_text_and_files(client: OpenCodeClient):
 
 
 @respx.mock
+async def test_multi_part_text_keeps_last_part_as_answer(client: OpenCodeClient):
+    """Interim prose before a tool is history; the last text part is the answer."""
+    respx.post(f"{BASE}/session/{SID}/prompt_async").mock(
+        return_value=httpx.Response(204)
+    )
+    body = sse_body(
+        # interim reasoning (part a)
+        part_delta("Let me check ", part_id="prt_a"),
+        part_delta("the file.", part_id="prt_a"),
+        part_updated_text("Let me check the file.", part_id="prt_a"),
+        # a tool call between the two text parts
+        part_updated_tool("c1", "read", "completed", {"filePath": "src/App.tsx"}, "(loaded)"),
+        # final answer (part b)
+        part_delta("Done — ", part_id="prt_b"),
+        part_delta("updated App.tsx.", part_id="prt_b"),
+        part_updated_text("Done — updated App.tsx.", part_id="prt_b"),
+        idle(),
+    )
+    respx.get(f"{BASE}/event").mock(
+        return_value=httpx.Response(
+            200, content=body, headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    steps: list[dict] = []
+
+    async def on_step(s: dict) -> None:
+        steps.append(s)
+
+    result = await client.send_prompt(SID, "do a thing", on_step)
+
+    # final answer is the LAST text part only, not the concatenation
+    assert result["text"] == "Done — updated App.tsx."
+
+    text_steps = [s for s in steps if s["tool"] == "text"]
+    part_ids = {s["part_id"] for s in text_steps}
+    assert part_ids == {"prt_a", "prt_b"}
+    # the interim part is preserved as its own (final) value, not merged into the answer
+    assert any(s["part_id"] == "prt_a" and s["output"] == "Let me check the file." for s in text_steps)
+
+
+@respx.mock
 async def test_question_via_tool_part_short_circuits(client: OpenCodeClient):
     respx.post(f"{BASE}/session/{SID}/prompt_async").mock(
         return_value=httpx.Response(204)

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import type { ReactNode } from 'react';
 import { Bubble, Sender, Think, ThoughtChain } from '@ant-design/x';
 import {
   Avatar,
@@ -12,7 +13,20 @@ import {
   App as AntdApp,
   theme,
 } from 'antd';
-import { UserOutlined, RobotOutlined } from '@ant-design/icons';
+import {
+  UserOutlined,
+  RobotOutlined,
+  AimOutlined,
+  BulbOutlined,
+  FileSearchOutlined,
+  EditOutlined,
+  FileAddOutlined,
+  CodeOutlined,
+  ScheduleOutlined,
+  ToolOutlined,
+  LoadingOutlined,
+  CloseCircleOutlined,
+} from '@ant-design/icons';
 import type { AgentEvent, AgentQuestion, SelectionPayload } from '@/types/api';
 import { postChat, postAnswer } from '@/api/client';
 import { SSEConnection } from '@/lib/sseClient';
@@ -20,19 +34,21 @@ import { getSessionId } from '@/lib/sessionId';
 
 const { Text } = Typography;
 
-type StepRow = {
-  id: string;
-  tool: string;
-  label: string;
-  input?: Record<string, unknown>;
-  output?: string;
-  status: 'completed' | 'streaming';
-};
+type ProcessEntry =
+  | { kind: 'text'; id: string; text: string }
+  | { kind: 'selection'; id: string; selections: SelectionPayload[] }
+  | {
+      kind: 'tool';
+      id: string;
+      tool: string;
+      label: string;
+      output?: string;
+      status: 'completed' | 'streaming' | 'failed';
+    };
 
 type BuildingState = {
   status: 'building' | 'needs-input' | 'done' | 'error';
-  steps: StepRow[];
-  thinking: string;
+  entries: ProcessEntry[];
   question?: AgentQuestion;
   finalText?: string;
   files?: string[];
@@ -79,19 +95,31 @@ export function ChatPanel({
     (ev: AgentEvent) => {
       if (ev.type === 'agent_step') {
         if (ev.tool === 'text') {
-          updateBuilding((s) => ({ ...s, thinking: ev.output ?? '' }));
+          const partId = ev.part_id ?? 'text';
+          const text = ev.output ?? '';
+          updateBuilding((s) => {
+            const idx = s.entries.findIndex(
+              (e) => e.kind === 'text' && e.id === partId,
+            );
+            if (idx >= 0) {
+              const entries = [...s.entries];
+              entries[idx] = { kind: 'text', id: partId, text };
+              return { ...s, entries };
+            }
+            return { ...s, entries: [...s.entries, { kind: 'text', id: partId, text }] };
+          });
         } else {
           updateBuilding((s) => ({
             ...s,
-            steps: [
-              ...s.steps,
+            entries: [
+              ...s.entries,
               {
+                kind: 'tool',
                 id: `${Date.now()}-${Math.random()}`,
                 tool: ev.tool,
                 label: ev.label,
-                input: ev.input,
                 output: ev.output,
-                status: 'completed',
+                status: ev.status,
               },
             ],
           }));
@@ -101,12 +129,19 @@ export function ChatPanel({
         updateBuilding((s) => ({ ...s, status: 'needs-input', question: ev }));
       } else if (ev.type === 'agent_response') {
         setPendingQuestion(false);
-        updateBuilding((s) => ({
-          ...s,
-          status: 'done',
-          finalText: ev.text,
-          files: ev.files,
-        }));
+        updateBuilding((s) => {
+          // Drop the trailing text entry that equals the final answer — it is
+          // the answer (shown in the result area), not part of the history.
+          const entries = [...s.entries];
+          for (let i = entries.length - 1; i >= 0; i--) {
+            const e = entries[i];
+            if (e.kind === 'text') {
+              if (e.text === ev.text) entries.splice(i, 1);
+              break;
+            }
+          }
+          return { ...s, status: 'done', finalText: ev.text, files: ev.files, entries };
+        });
         activeBuildingId.current = null;
       }
     },
@@ -132,13 +167,17 @@ export function ChatPanel({
     const buildingId = `b-${Date.now()}`;
     activeBuildingId.current = buildingId;
     const snapshot = selections;
+    const initialEntries: ProcessEntry[] =
+      snapshot.length > 0
+        ? [{ kind: 'selection', id: `sel-${buildingId}`, selections: snapshot }]
+        : [];
     setMessages((prev) => [
       ...prev,
       { kind: 'user', id: userId, text },
       {
         kind: 'building',
         id: buildingId,
-        state: { status: 'building', steps: [], thinking: '' },
+        state: { status: 'building', entries: initialEntries },
       },
     ]);
     setInput('');
@@ -283,34 +322,111 @@ function BuildingBubble({
   state: BuildingState;
   onAnswer: (a: string) => void;
 }) {
+  const { token } = theme.useToken();
   const active = state.status === 'building' || state.status === 'needs-input';
+
+  const entryIcon = (e: ProcessEntry): ReactNode => {
+    if (e.kind === 'tool') {
+      if (e.status === 'streaming')
+        return <LoadingOutlined style={{ color: token.colorPrimary }} />;
+      if (e.status === 'failed')
+        return <CloseCircleOutlined style={{ color: token.colorError }} />;
+    }
+    const color =
+      e.kind === 'selection'
+        ? token.colorWarning
+        : e.kind === 'text'
+        ? token.colorPrimary
+        : token.colorSuccess; // completed tool
+    const style = { color };
+    switch (e.kind === 'tool' ? e.tool : e.kind) {
+      case 'selection':
+        return <AimOutlined style={style} />;
+      case 'text':
+        return <BulbOutlined style={style} />;
+      case 'read':
+        return <FileSearchOutlined style={style} />;
+      case 'edit':
+        return <EditOutlined style={style} />;
+      case 'write':
+        return <FileAddOutlined style={style} />;
+      case 'bash':
+        return <CodeOutlined style={style} />;
+      case 'todowrite':
+        return <ScheduleOutlined style={style} />;
+      default:
+        return <ToolOutlined style={style} />;
+    }
+  };
 
   return (
     <Flex vertical gap={8} style={{ width: '100%' }}>
-      {(state.thinking || state.steps.length > 0) && (
+      {state.entries.length > 0 && (
         <Think
           title={active ? 'Thinking…' : 'Thought'}
           loading={state.status === 'building'}
           defaultExpanded={active}
         >
-          <Flex vertical gap={8} style={{ width: '100%' }}>
-            {state.thinking && <Text>{state.thinking}</Text>}
-            {state.steps.length > 0 && (
-              <ThoughtChain
-                items={state.steps.map((s) => ({
-                  key: s.id,
-                  title: s.label,
-                  status: s.status === 'streaming' ? 'loading' : 'success',
-                  collapsible: Boolean(s.output),
-                  content: s.output ? (
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      {s.output}
-                    </Text>
-                  ) : undefined,
-                }))}
-              />
+          <ThoughtChain
+            items={state.entries.map((e) =>
+              e.kind === 'selection'
+                ? {
+                    key: e.id,
+                    title: 'Selected from preview',
+                    icon: entryIcon(e),
+                    collapsible: true,
+                    content: (
+                      <Flex vertical gap={6}>
+                        {e.selections.map((sel, i) => (
+                          <Flex key={`${sel.summary}-${i}`} vertical gap={2}>
+                            <Text strong>{sel.summary}</Text>
+                            {sel.component && (
+                              <Text type="secondary" style={{ fontSize: 12 }}>
+                                component: {sel.component}
+                              </Text>
+                            )}
+                            {sel.selector && (
+                              <Text type="secondary" style={{ fontSize: 12 }}>
+                                selector: {sel.selector}
+                              </Text>
+                            )}
+                            {sel.source && (
+                              <Text type="secondary" style={{ fontSize: 12 }}>
+                                source: {sel.source}
+                              </Text>
+                            )}
+                            {sel.text && (
+                              <Text type="secondary" style={{ fontSize: 12 }}>
+                                “{sel.text.slice(0, 120)}
+                                {sel.text.length > 120 ? '…' : ''}”
+                              </Text>
+                            )}
+                          </Flex>
+                        ))}
+                      </Flex>
+                    ),
+                  }
+                : e.kind === 'text'
+                ? {
+                    key: e.id,
+                    title: 'Reasoning',
+                    icon: entryIcon(e),
+                    collapsible: true,
+                    content: <Text>{e.text}</Text>,
+                  }
+                : {
+                    key: e.id,
+                    title: e.label,
+                    icon: entryIcon(e),
+                    collapsible: Boolean(e.output),
+                    content: e.output ? (
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {e.output}
+                      </Text>
+                    ) : undefined,
+                  },
             )}
-          </Flex>
+          />
         </Think>
       )}
       {state.question && (
