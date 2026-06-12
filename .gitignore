@@ -1,0 +1,11 @@
+.env
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+.files/
+nul
+orchestrator/data/
+!orchestrator/data/.gitkeep
+web/node_modules/
+web/dist/
