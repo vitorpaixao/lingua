@@ -10,6 +10,7 @@ export function WorkspaceHeader() {
 
   return (
     <Flex
+      className="lingua-workspace-header"
       justify="space-between"
       align="center"
       style={{

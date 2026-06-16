@@ -296,10 +296,11 @@ export function ChatPanel({
   }));
 
   return (
-    <Flex vertical style={{ height: '100%', minWidth: 0 }}>
+    <Flex vertical className="lingua-chat" style={{ height: '100%', minWidth: 0 }}>
       <Flex
         vertical
         flex={1}
+        className="lingua-chat-messages"
         style={{ overflow: 'auto', padding: 16, background: token.colorBgLayout }}
       >
         <Bubble.List
@@ -318,6 +319,7 @@ export function ChatPanel({
         />
       </Flex>
       <Flex
+        className="lingua-chat-input"
         style={{
           padding: 12,
           background: token.colorBgLayout,

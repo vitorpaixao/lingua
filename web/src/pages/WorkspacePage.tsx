@@ -202,6 +202,7 @@ export function WorkspacePage() {
           <Splitter.Panel min="25%" defaultSize={`${100 - initialPct}%`}>
             <Flex
               vertical
+              className="lingua-workspace"
               style={{ height: '100%', minWidth: 0, background: token.colorBgLayout }}
             >
               <WorkspaceHeader />
@@ -257,6 +258,7 @@ export function WorkspacePage() {
             >
               <Flex
                 vertical
+                className="lingua-preview"
                 style={{
                   height: '100%',
                   border: `1px solid ${token.colorBorderSecondary}`,
@@ -273,6 +275,7 @@ export function WorkspacePage() {
                   onTogglePick={onTogglePick}
                 />
                 <div
+                  className="lingua-preview-iframe"
                   style={{
                     flex: 1,
                     minHeight: 0,

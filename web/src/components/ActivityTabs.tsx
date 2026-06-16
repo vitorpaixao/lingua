@@ -19,5 +19,5 @@ const OPTIONS = [
 
 export function ActivityTabs() {
   // Value is fixed to 'chats' for now; the other options are disabled placeholders.
-  return <Segmented block value="chats" options={OPTIONS} />;
+  return <Segmented className="lingua-activity-tabs" block value="chats" options={OPTIONS} />;
 }

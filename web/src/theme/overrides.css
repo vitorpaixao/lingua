@@ -1,5 +1,22 @@
 /* Lingua design overrides that can't be expressed as antd tokens. Keep minimal. */
 
+/*
+ * Section anchors — stable classNames on each layout region (styling stays inline via
+ * theme.useToken(); these are just hooks for targeting / pointing at a section by name):
+ *
+ *   lingua-workspace            left column root            (WorkspacePage)
+ *   lingua-workspace-header     back + logo + theme toggle  (WorkspaceHeader)
+ *   lingua-activity-tabs        horizontal Segmented menu   (ActivityTabs)
+ *   lingua-conversation-select  dropdown trigger            (ConversationSelect)
+ *   lingua-conversation-list    thread list                 (ConversationList)
+ *   lingua-chat                 chat column root            (ChatPanel)
+ *   lingua-chat-messages        bubble list region          (ChatPanel)
+ *   lingua-chat-input           Sender footer               (ChatPanel)
+ *   lingua-preview              preview window card         (WorkspacePage)
+ *   lingua-preview-toolbar      preview toolbar             (PreviewToolbar)
+ *   lingua-preview-iframe       iframe wrapper              (WorkspacePage)
+ */
+
 /* Splitter drag bar: drop the hover/active background highlight (the ::before fill,
    which uses the shared global controlItemBgHover token) while keeping the ::after
    handle line visible. */

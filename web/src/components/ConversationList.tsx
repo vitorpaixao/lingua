@@ -128,6 +128,7 @@ export function ConversationList({
   return (
     <Flex
       vertical
+      className="lingua-conversation-list"
       style={{ height: '100%', minHeight: 0, background: token.colorBgLayout }}
     >
       <Flex style={{ padding: 8 }}>

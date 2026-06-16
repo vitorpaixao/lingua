@@ -60,6 +60,7 @@ export function PreviewToolbar({
 
   return (
     <Flex
+      className="lingua-preview-toolbar"
       justify="space-between"
       align="center"
       style={{

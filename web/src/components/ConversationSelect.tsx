@@ -14,6 +14,7 @@ export function ConversationSelect({
 }) {
   return (
     <Button
+      className="lingua-conversation-select"
       block
       onClick={onToggle}
       style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
