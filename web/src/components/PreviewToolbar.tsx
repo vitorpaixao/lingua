@@ -65,6 +65,7 @@ export function PreviewToolbar({
       style={{
         height: 40,
         paddingInline: 8,
+        background: token.colorBgContainer,
         borderBottom: `1px solid ${token.colorBorderSecondary}`,
         flexShrink: 0,
       }}

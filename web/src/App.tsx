@@ -1,9 +1,10 @@
 import { BrowserRouter, Route, Routes, Navigate } from 'react-router-dom';
-import { ConfigProvider, App as AntdApp, theme as antdTheme } from 'antd';
+import { ConfigProvider, App as AntdApp } from 'antd';
 import { XProvider } from '@ant-design/x';
 import { IntroPage } from './pages/IntroPage';
 import { WorkspacePage } from './pages/WorkspacePage';
 import { ThemeProvider, useTheme } from './lib/theme';
+import { buildLinguaTheme } from './theme/tokens';
 
 export function App() {
   return (
@@ -16,13 +17,7 @@ export function App() {
 function ThemedRoot() {
   const { mode } = useTheme();
   return (
-    <ConfigProvider
-      theme={{
-        algorithm:
-          mode === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
-        token: { colorPrimary: '#1677ff' },
-      }}
-    >
+    <ConfigProvider theme={buildLinguaTheme(mode)}>
       <AntdApp style={{ height: '100%' }}>
         <XProvider>
           <BrowserRouter>

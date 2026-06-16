@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './App';
 import './index.css';
+import './theme/overrides.css';
 
 async function bootstrap() {
   if (import.meta.env.DEV && import.meta.env.VITE_USE_MSW !== 'false') {

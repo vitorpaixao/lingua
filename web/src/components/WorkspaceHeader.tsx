@@ -1,22 +1,10 @@
 import { Button, Flex, Space, Tooltip, theme } from 'antd';
-import {
-  ArrowLeftOutlined,
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
-  TranslationOutlined,
-} from '@ant-design/icons';
+import { ArrowLeftOutlined, TranslationOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
-/** Header over the left column (activity bar + sidebar + chat):
- *  back to projects, logo, sidebar-collapse toggle, theme toggle. */
-export function WorkspaceHeader({
-  panelOpen,
-  onTogglePanel,
-}: {
-  panelOpen: boolean;
-  onTogglePanel: () => void;
-}) {
+/** Header over the left column: back to projects, Lingua wordmark, theme toggle. */
+export function WorkspaceHeader() {
   const nav = useNavigate();
   const { token } = theme.useToken();
 
@@ -27,8 +15,7 @@ export function WorkspaceHeader({
       style={{
         height: 48,
         padding: '0 8px',
-        background: token.colorBgContainer,
-        borderBottom: `1px solid ${token.colorBorderSecondary}`,
+        background: token.colorBgLayout,
         flexShrink: 0,
       }}
     >
@@ -42,16 +29,7 @@ export function WorkspaceHeader({
         </Space>
       </Space>
 
-      <Space size={4}>
-        <Tooltip title={panelOpen ? 'Collapse sidebar' : 'Expand sidebar'}>
-          <Button
-            type="text"
-            icon={panelOpen ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />}
-            onClick={onTogglePanel}
-          />
-        </Tooltip>
-        <ThemeToggle />
-      </Space>
+      <ThemeToggle />
     </Flex>
   );
 }

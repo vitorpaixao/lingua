@@ -320,8 +320,7 @@ export function ChatPanel({
       <Flex
         style={{
           padding: 12,
-          borderTop: `1px solid ${token.colorBorderSecondary}`,
-          background: token.colorBgContainer,
+          background: token.colorBgLayout,
         }}
       >
         {pendingQuestion && openTextAnswer ? (

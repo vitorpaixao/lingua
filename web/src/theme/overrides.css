@@ -1,0 +1,10 @@
+/* Lingua design overrides that can't be expressed as antd tokens. Keep minimal. */
+
+/* Splitter drag bar: drop the hover/active background highlight (the ::before fill,
+   which uses the shared global controlItemBgHover token) while keeping the ::after
+   handle line visible. */
+.ant-splitter-bar-dragger::before,
+.ant-splitter-bar-dragger:hover::before,
+.ant-splitter-bar-dragger-active::before {
+  background: transparent;
+}

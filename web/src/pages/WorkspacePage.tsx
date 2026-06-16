@@ -4,8 +4,9 @@ import { Flex, Spin, Splitter, theme } from 'antd';
 import { WorkspaceHeader } from '@/components/WorkspaceHeader';
 import { PreviewToolbar } from '@/components/PreviewToolbar';
 import { ChatPanel } from '@/components/ChatPanel';
-import { ConversationSidebar } from '@/components/ConversationSidebar';
-import type { ActivePanel } from '@/components/ConversationSidebar';
+import { ActivityTabs } from '@/components/ActivityTabs';
+import { ConversationSelect } from '@/components/ConversationSelect';
+import { ConversationList } from '@/components/ConversationList';
 import { PreviewPanel } from '@/components/PreviewPanel';
 import {
   getProject,
@@ -17,15 +18,10 @@ import {
 import type { Project, SelectionPayload } from '@/types/api';
 
 const DRAG_KEY = 'lingua_preview_width';
-const PANEL_KEY = 'lingua_sidebar_panel';
 
 function loadPreviewPct(): number {
   const stored = Number(window.localStorage.getItem(DRAG_KEY));
   return stored >= 20 && stored <= 80 ? stored : 50;
-}
-
-function loadPanel(): ActivePanel {
-  return window.localStorage.getItem(PANEL_KEY) === 'closed' ? null : 'chats';
 }
 
 export function WorkspacePage() {
@@ -34,9 +30,13 @@ export function WorkspacePage() {
   const projectId = params.get('id');
   const conversationId = params.get('c');
 
+  // The chat column shows either the active chat ('chat') or the conversation list ('list').
+  const [view, setView] = useState<'chat' | 'list'>('chat');
+
   const selectConversation = useCallback(
     (id: string) => {
       if (projectId) nav(`/workspace?id=${projectId}&c=${id}`);
+      setView('chat');
     },
     [projectId, nav],
   );
@@ -46,16 +46,8 @@ export function WorkspacePage() {
   const [pickMode, setPickMode] = useState(false);
   const [selections, setSelections] = useState<SelectionPayload[]>([]);
   const [previewKey, setPreviewKey] = useState(0);
-  const [panel, setPanel] = useState<ActivePanel>(loadPanel);
+  const [convTitle, setConvTitle] = useState('Conversations');
   const { token } = theme.useToken();
-
-  const togglePanel = useCallback(() => {
-    setPanel((p) => {
-      const next: ActivePanel = p === 'chats' ? null : 'chats';
-      window.localStorage.setItem(PANEL_KEY, next === null ? 'closed' : 'chats');
-      return next;
-    });
-  }, []);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const previewPctRef = useRef<number>(loadPreviewPct());
@@ -108,6 +100,24 @@ export function WorkspacePage() {
       cancelled = true;
     };
   }, [projectId, conversationId, nav]);
+
+  // Resolve the active conversation's title for the selector label.
+  useEffect(() => {
+    if (!projectId || !conversationId) {
+      setConvTitle('Conversations');
+      return;
+    }
+    let cancelled = false;
+    listConversations(projectId)
+      .then((list) => {
+        if (cancelled) return;
+        setConvTitle(list.find((c) => c.id === conversationId)?.title ?? 'Conversations');
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, conversationId]);
 
   // postMessage listener for picker
   useEffect(() => {
@@ -188,36 +198,44 @@ export function WorkspacePage() {
             }
           }}
         >
-          {/* Left column: header over activity bar + sidebar + chat */}
+          {/* Left column: header, horizontal activity tabs, conversation selector, chat */}
           <Splitter.Panel min="25%" defaultSize={`${100 - initialPct}%`}>
-            <Flex vertical style={{ height: '100%', minWidth: 0 }}>
-              <WorkspaceHeader panelOpen={panel === 'chats'} onTogglePanel={togglePanel} />
-              <Flex flex={1} style={{ minHeight: 0 }}>
-                <div style={{ flex: '0 0 auto', minHeight: 0 }}>
-                  <ConversationSidebar
+            <Flex
+              vertical
+              style={{ height: '100%', minWidth: 0, background: token.colorBgLayout }}
+            >
+              <WorkspaceHeader />
+              <div style={{ padding: 8, flexShrink: 0 }}>
+                <ActivityTabs />
+              </div>
+              <div style={{ padding: '0 8px 8px', flexShrink: 0 }}>
+                <ConversationSelect
+                  title={convTitle}
+                  open={view === 'list'}
+                  onToggle={() => setView((v) => (v === 'list' ? 'chat' : 'list'))}
+                />
+              </div>
+              <Flex vertical flex={1} style={{ minHeight: 0, minWidth: 0 }}>
+                {view === 'list' ? (
+                  <ConversationList
                     projectId={project.id}
                     activeId={conversationId}
                     onSelect={selectConversation}
-                    panel={panel}
-                    onToggleChats={togglePanel}
                   />
-                </div>
-                <Flex vertical flex={1} style={{ minWidth: 0 }}>
-                  {conversationId ? (
-                    <ChatPanel
-                      conversationId={conversationId}
-                      selections={selections}
-                      onRemoveSelection={(i) =>
-                        setSelections((prev) => prev.filter((_, idx) => idx !== i))
-                      }
-                      onClearSelections={() => setSelections([])}
-                    />
-                  ) : (
-                    <Flex justify="center" align="center" style={{ height: '100%' }}>
-                      <Spin />
-                    </Flex>
-                  )}
-                </Flex>
+                ) : conversationId ? (
+                  <ChatPanel
+                    conversationId={conversationId}
+                    selections={selections}
+                    onRemoveSelection={(i) =>
+                      setSelections((prev) => prev.filter((_, idx) => idx !== i))
+                    }
+                    onClearSelections={() => setSelections([])}
+                  />
+                ) : (
+                  <Flex justify="center" align="center" style={{ height: '100%' }}>
+                    <Spin />
+                  </Flex>
+                )}
               </Flex>
             </Flex>
           </Splitter.Panel>
