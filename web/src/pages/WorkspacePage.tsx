@@ -8,6 +8,7 @@ import { ActivityTabs } from '@/components/ActivityTabs';
 import { ConversationSelect } from '@/components/ConversationSelect';
 import { ConversationList } from '@/components/ConversationList';
 import { PreviewPanel } from '@/components/PreviewPanel';
+import { figma } from '@/theme/figma';
 import {
   getProject,
   getActiveWorkspace,
@@ -203,13 +204,18 @@ export function WorkspacePage() {
             <Flex
               vertical
               className="lingua-workspace"
-              style={{ height: '100%', minWidth: 0, background: token.colorBgLayout }}
+              style={{
+                height: '100%',
+                minWidth: 0,
+                paddingInline: figma.workspaceGutter,
+                background: token.colorBgLayout,
+              }}
             >
               <WorkspaceHeader />
-              <div style={{ padding: 8, flexShrink: 0 }}>
+              <div style={{ padding: '8px 0', flexShrink: 0 }}>
                 <ActivityTabs />
               </div>
-              <div style={{ padding: '0 8px 8px', flexShrink: 0 }}>
+              <div style={{ padding: '0 0 8px', flexShrink: 0 }}>
                 <ConversationSelect
                   title={convTitle}
                   open={view === 'list'}
@@ -251,7 +257,7 @@ export function WorkspacePage() {
             <div
               style={{
                 height: '100%',
-                padding: 12,
+                padding: `${figma.workspaceGutter}px ${figma.workspaceGutter}px ${figma.workspaceGutter}px 0`,
                 background: token.colorBgLayout,
                 boxSizing: 'border-box',
               }}

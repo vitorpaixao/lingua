@@ -15,7 +15,7 @@ export function WorkspaceHeader() {
       align="center"
       style={{
         height: 48,
-        padding: '0 8px',
+        padding: 0,
         background: token.colorBgLayout,
         flexShrink: 0,
       }}

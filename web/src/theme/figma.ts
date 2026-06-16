@@ -4,8 +4,12 @@
  * ./tokens.ts instead.
  */
 export const figma = {
-  /** Outer gutter around the preview "popped window" card (Figma padding). */
-  previewGutter: 12,
+  /**
+   * Single workspace gutter. Drives the left column's left/right inset and the preview
+   * splitter-panel inset (Figma hoists the horizontal gutter onto the column containers).
+   * Change this to reflow both columns.
+   */
+  workspaceGutter: 24,
   /** Inner padding of the preview window card. */
   previewCardPadding: 8,
 } as const;

@@ -301,7 +301,7 @@ export function ChatPanel({
         vertical
         flex={1}
         className="lingua-chat-messages"
-        style={{ overflow: 'auto', padding: 16, background: token.colorBgLayout }}
+        style={{ overflow: 'auto', padding: '16px 0', background: token.colorBgLayout }}
       >
         <Bubble.List
           autoScroll
@@ -321,7 +321,7 @@ export function ChatPanel({
       <Flex
         className="lingua-chat-input"
         style={{
-          padding: 12,
+          padding: '12px 0',
           background: token.colorBgLayout,
         }}
       >
