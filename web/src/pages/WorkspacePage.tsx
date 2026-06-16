@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Flex, Spin, Splitter } from 'antd';
-import { TopBar } from '@/components/TopBar';
+import { Flex, Spin, Splitter, theme } from 'antd';
+import { WorkspaceHeader } from '@/components/WorkspaceHeader';
+import { PreviewToolbar } from '@/components/PreviewToolbar';
 import { ChatPanel } from '@/components/ChatPanel';
 import { ConversationSidebar } from '@/components/ConversationSidebar';
+import type { ActivePanel } from '@/components/ConversationSidebar';
 import { PreviewPanel } from '@/components/PreviewPanel';
 import {
   getProject,
@@ -15,10 +17,15 @@ import {
 import type { Project, SelectionPayload } from '@/types/api';
 
 const DRAG_KEY = 'lingua_preview_width';
+const PANEL_KEY = 'lingua_sidebar_panel';
 
 function loadPreviewPct(): number {
   const stored = Number(window.localStorage.getItem(DRAG_KEY));
   return stored >= 20 && stored <= 80 ? stored : 50;
+}
+
+function loadPanel(): ActivePanel {
+  return window.localStorage.getItem(PANEL_KEY) === 'closed' ? null : 'chats';
 }
 
 export function WorkspacePage() {
@@ -39,6 +46,16 @@ export function WorkspacePage() {
   const [pickMode, setPickMode] = useState(false);
   const [selections, setSelections] = useState<SelectionPayload[]>([]);
   const [previewKey, setPreviewKey] = useState(0);
+  const [panel, setPanel] = useState<ActivePanel>(loadPanel);
+  const { token } = theme.useToken();
+
+  const togglePanel = useCallback(() => {
+    setPanel((p) => {
+      const next: ActivePanel = p === 'chats' ? null : 'chats';
+      window.localStorage.setItem(PANEL_KEY, next === null ? 'closed' : 'chats');
+      return next;
+    });
+  }, []);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const previewPctRef = useRef<number>(loadPreviewPct());
@@ -158,19 +175,7 @@ export function WorkspacePage() {
 
   return (
     <Flex vertical style={{ height: '100vh' }}>
-      <TopBar
-        projectName={project.name}
-        pickMode={pickMode}
-        onTogglePick={onTogglePick}
-      />
       <Flex flex={1} style={{ minHeight: 0 }}>
-        <div style={{ flex: '0 0 auto', minHeight: 0 }}>
-          <ConversationSidebar
-            projectId={project.id}
-            activeId={conversationId}
-            onSelect={selectConversation}
-          />
-        </div>
         <Splitter
           style={{ flex: 1, minHeight: 0 }}
           onResizeEnd={(sizes) => {
@@ -183,33 +188,88 @@ export function WorkspacePage() {
             }
           }}
         >
-          <Splitter.Panel min="20%" defaultSize={`${100 - initialPct}%`}>
-            {conversationId ? (
-              <ChatPanel
-                conversationId={conversationId}
-                selections={selections}
-                onRemoveSelection={(i) =>
-                  setSelections((prev) => prev.filter((_, idx) => idx !== i))
-                }
-                onClearSelections={() => setSelections([])}
-              />
-            ) : (
-              <Flex justify="center" align="center" style={{ height: '100%' }}>
-                <Spin />
+          {/* Left column: header over activity bar + sidebar + chat */}
+          <Splitter.Panel min="25%" defaultSize={`${100 - initialPct}%`}>
+            <Flex vertical style={{ height: '100%', minWidth: 0 }}>
+              <WorkspaceHeader panelOpen={panel === 'chats'} onTogglePanel={togglePanel} />
+              <Flex flex={1} style={{ minHeight: 0 }}>
+                <div style={{ flex: '0 0 auto', minHeight: 0 }}>
+                  <ConversationSidebar
+                    projectId={project.id}
+                    activeId={conversationId}
+                    onSelect={selectConversation}
+                    panel={panel}
+                    onToggleChats={togglePanel}
+                  />
+                </div>
+                <Flex vertical flex={1} style={{ minWidth: 0 }}>
+                  {conversationId ? (
+                    <ChatPanel
+                      conversationId={conversationId}
+                      selections={selections}
+                      onRemoveSelection={(i) =>
+                        setSelections((prev) => prev.filter((_, idx) => idx !== i))
+                      }
+                      onClearSelections={() => setSelections([])}
+                    />
+                  ) : (
+                    <Flex justify="center" align="center" style={{ height: '100%' }}>
+                      <Spin />
+                    </Flex>
+                  )}
+                </Flex>
               </Flex>
-            )}
+            </Flex>
           </Splitter.Panel>
+
+          {/* Preview column: "popped up" window card with its own toolbar */}
           <Splitter.Panel
             min="20%"
             max="80%"
             defaultSize={`${initialPct}%`}
             collapsible={{ start: true }}
           >
-            <PreviewPanel
-              ref={iframeRef}
-              onLoad={onPreviewLoad}
-              reloadKey={previewKey}
-            />
+            <div
+              style={{
+                height: '100%',
+                padding: 12,
+                background: token.colorBgLayout,
+                boxSizing: 'border-box',
+              }}
+            >
+              <Flex
+                vertical
+                style={{
+                  height: '100%',
+                  border: `1px solid ${token.colorBorderSecondary}`,
+                  borderRadius: token.borderRadiusLG,
+                  padding: 8,
+                  background: token.colorBgContainer,
+                  boxShadow: token.boxShadowSecondary,
+                  overflow: 'hidden',
+                }}
+              >
+                <PreviewToolbar
+                  projectName={project.name}
+                  pickMode={pickMode}
+                  onTogglePick={onTogglePick}
+                />
+                <div
+                  style={{
+                    flex: 1,
+                    minHeight: 0,
+                    overflow: 'hidden',
+                    borderRadius: token.borderRadius,
+                  }}
+                >
+                  <PreviewPanel
+                    ref={iframeRef}
+                    onLoad={onPreviewLoad}
+                    reloadKey={previewKey}
+                  />
+                </div>
+              </Flex>
+            </div>
           </Splitter.Panel>
         </Splitter>
       </Flex>

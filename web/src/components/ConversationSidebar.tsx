@@ -19,12 +19,7 @@ import {
 } from '@/api/client';
 import type { Conversation } from '@/types/api';
 
-type ActivePanel = 'chats' | null;
-const PANEL_KEY = 'lingua_sidebar_panel';
-
-function loadPanel(): ActivePanel {
-  return window.localStorage.getItem(PANEL_KEY) === 'closed' ? null : 'chats';
-}
+export type ActivePanel = 'chats' | null;
 
 // Placeholder system features — reserved icons for future panels (disabled for now).
 const PLACEHOLDERS = [
@@ -52,23 +47,18 @@ export function ConversationSidebar({
   projectId,
   activeId,
   onSelect,
+  panel,
+  onToggleChats,
 }: {
   projectId: string;
   activeId: string | null;
   onSelect: (id: string) => void;
+  panel: ActivePanel;
+  onToggleChats: () => void;
 }) {
   const { modal } = AntdApp.useApp();
   const { token } = theme.useToken();
   const [items, setItems] = useState<Conversation[]>([]);
-  const [panel, setPanel] = useState<ActivePanel>(loadPanel);
-
-  const toggleChats = useCallback(() => {
-    setPanel((p) => {
-      const next: ActivePanel = p === 'chats' ? null : 'chats';
-      window.localStorage.setItem(PANEL_KEY, next === null ? 'closed' : 'chats');
-      return next;
-    });
-  }, []);
 
   const reload = useCallback(async () => {
     const list = await listConversations(projectId);
@@ -174,7 +164,7 @@ export function ConversationSidebar({
           <Button
             type={open ? 'primary' : 'text'}
             icon={<MessageOutlined />}
-            onClick={toggleChats}
+            onClick={onToggleChats}
           />
         </Tooltip>
         {PLACEHOLDERS.map((p) => (
