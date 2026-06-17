@@ -278,7 +278,7 @@ export function WorkspacePage() {
                   minHeight: 0,
                   border: `1px solid ${token.colorBorderSecondary}`,
                   borderRadius: token.borderRadiusLG,
-                  padding: 8,
+                  padding: 0,
                   background: token.colorBgContainer,
                   boxShadow: token.boxShadowSecondary,
                   overflow: 'hidden',
@@ -295,7 +295,7 @@ export function WorkspacePage() {
                     flex: 1,
                     minHeight: 0,
                     overflow: 'hidden',
-                    borderRadius: token.borderRadius,
+                    borderRadius: 0,
                   }}
                 >
                   <PreviewPanel
