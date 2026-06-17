@@ -205,9 +205,14 @@ export function WorkspacePage() {
               vertical
               className="lingua-workspace"
               style={{
-                height: '100%',
+                // Fill the Splitter panel via flex (panel is a flex column — see overrides.css).
+                // Avoids height:100%, which resolves unreliably against the stretched,
+                // overflow:auto panel and made the whole column scroll.
+                flex: 1,
                 minWidth: 0,
-                paddingInline: figma.workspaceGutter,
+                minHeight: 0,
+                overflow: 'hidden',
+                padding: figma.workspaceGutter,
                 background: token.colorBgLayout,
               }}
             >
@@ -256,7 +261,10 @@ export function WorkspacePage() {
           >
             <div
               style={{
-                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                flex: 1,
+                minHeight: 0,
                 padding: `${figma.workspaceGutter}px ${figma.workspaceGutter}px ${figma.workspaceGutter}px 0`,
                 background: token.colorBgLayout,
                 boxSizing: 'border-box',
@@ -266,7 +274,8 @@ export function WorkspacePage() {
                 vertical
                 className="lingua-preview"
                 style={{
-                  height: '100%',
+                  flex: 1,
+                  minHeight: 0,
                   border: `1px solid ${token.colorBorderSecondary}`,
                   borderRadius: token.borderRadiusLG,
                   padding: 8,

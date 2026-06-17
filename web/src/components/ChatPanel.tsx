@@ -321,7 +321,6 @@ export function ChatPanel({
       <Flex
         className="lingua-chat-input"
         style={{
-          padding: '12px 0',
           background: token.colorBgLayout,
         }}
       >

@@ -20,6 +20,20 @@
 /* Splitter drag bar: drop the hover/active background highlight (the ::before fill,
    which uses the shared global controlItemBgHover token) while keeping the ::after
    handle line visible. */
+/* Splitter panels get their height from align-items:stretch (no explicit height) and are
+   overflow:auto. Making each panel a flex column lets its child fill via flex:1 instead of
+   height:100% (which resolves unreliably against a stretched overflow:auto parent and made the
+   whole column scroll). */
+.ant-splitter-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Chat input footer: top gutter only, no bottom padding (sits flush above the column gutter). */
+.lingua-chat-input {
+  padding: 12px 0 0;
+}
+
 .ant-splitter .ant-splitter-bar .ant-splitter-bar-dragger::before,
 .ant-splitter .ant-splitter-bar .ant-splitter-bar-dragger:hover::before,
 .ant-splitter .ant-splitter-bar .ant-splitter-bar-dragger-active::before {
