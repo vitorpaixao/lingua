@@ -9,7 +9,7 @@ from pathlib import Path
 
 from fastapi import APIRouter
 
-from lingua.deps import get_settings
+from lingua.deps import get_settings, get_settings_store
 
 router = APIRouter()
 
@@ -28,7 +28,7 @@ async def _git(cmd: str, cwd: Path) -> tuple[int, str, str]:
 
 def _minimal_env() -> dict[str, str]:
     import os
-    keep = {"PATH", "HOME", "GITHUB_TOKEN", "GIT_USER_NAME", "GIT_USER_EMAIL"}
+    keep = {"PATH", "HOME", "GIT_USER_NAME", "GIT_USER_EMAIL"}
     return {k: v for k, v in os.environ.items() if k in keep}
 
 
@@ -94,10 +94,11 @@ async def git_publish():
     if ccode != 0 and "nothing to commit" not in cerr:
         return {"ok": False, "step": "commit", "error": cerr}
 
-    if settings.github_token:
+    github_token = await get_settings_store().get_github_token()
+    if github_token:
         helper = (
             f"!f() {{ echo username=oauth2; "
-            f"echo password={settings.github_token}; }}; f"
+            f"echo password={github_token}; }}; f"
         )
         push_cmd = (
             f"git -c credential.helper={shlex.quote(helper)} "

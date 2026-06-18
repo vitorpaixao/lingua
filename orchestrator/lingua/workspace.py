@@ -19,12 +19,17 @@ project's `.opencode/` directory.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import shutil
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger("lingua.workspace")
+
+# Provider id used for the Lingua-injected OpenAI-compatible provider in opencode.json.
+_OPENCODE_PROVIDER_ID = "lingua"
 
 
 class GitError(RuntimeError):
@@ -37,14 +42,12 @@ class WorkspaceManager:
         data_dir: Path,
         symlink_path: Path,
         agent_config_dir: Path,
-        github_token: str | None = None,
         git_user_name: str = "Lingua",
         git_user_email: str = "lingua@local",
     ):
         self.data_dir = data_dir
         self.symlink_path = symlink_path
         self.agent_config_dir = agent_config_dir
-        self.github_token = github_token
         self.git_user_name = git_user_name
         self.git_user_email = git_user_email
 
@@ -55,11 +58,14 @@ class WorkspaceManager:
         project_id: str,
         bootstrap_url: str,
         target_url: str | None = None,
+        github_token: str | None = None,
+        model_connection: dict[str, Any] | None = None,
     ) -> Path:
         """Clone the bootstrap repo into the per-project subdir.
 
         Renames the origin remote to `bootstrap` (push disabled). If `target_url`
-        is provided, adds it as `origin`. Copies agent-config into `.opencode/`.
+        is provided, adds it as `origin`. Copies agent-config into `.opencode/` and
+        injects the Model Connection into `.opencode/opencode.json`.
         Appends `.opencode/` to `.gitignore`.
         Returns the path to the created subdir.
         """
@@ -69,7 +75,7 @@ class WorkspaceManager:
 
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
-        auth_url = self._with_token(bootstrap_url)
+        auth_url = self._with_token(bootstrap_url, github_token)
         await self._run_git(["clone", auth_url, str(project_dir)])
 
         # Strip credentials from origin remote, then rename
@@ -82,8 +88,9 @@ class WorkspaceManager:
         if target_url:
             await self._git_in(project_dir, ["remote", "add", "origin", target_url])
 
-        # Inject agent config and gitignore
+        # Inject agent config + Model Connection overlay, then gitignore
         self.inject_agent_config(project_id)
+        self._write_opencode_overlay(project_dir, model_connection)
         self._ensure_gitignore_excludes_opencode(project_dir)
 
         return project_dir
@@ -106,7 +113,9 @@ class WorkspaceManager:
             shutil.rmtree(dest)
         shutil.copytree(self.agent_config_dir, dest)
 
-    async def switch(self, project_id: str) -> None:
+    async def switch(
+        self, project_id: str, model_connection: dict[str, Any] | None = None
+    ) -> None:
         """Atomically swap /project to point at /project-data/<id>.
 
         Uses os.symlink + os.replace for atomic rename. The target dir must exist.
@@ -115,8 +124,9 @@ class WorkspaceManager:
         if not target.exists():
             raise FileNotFoundError(f"Project subdir missing: {target}")
 
-        # Refresh agent config on every switch (latest config wins)
+        # Refresh agent config + Model Connection overlay on every switch (latest wins)
         self.inject_agent_config(project_id)
+        self._write_opencode_overlay(target, model_connection)
         self._ensure_gitignore_excludes_opencode(target)
 
         # Atomic symlink swap: create temp symlink, then os.replace over the live one
@@ -152,10 +162,50 @@ class WorkspaceManager:
 
     # ---------- internals ----------
 
-    def _with_token(self, url: str) -> str:
-        if not self.github_token or not url.startswith("https://"):
+    def _with_token(self, url: str, token: str | None) -> str:
+        if not token or not url.startswith("https://"):
             return url
-        return url.replace("https://", f"https://oauth2:{self.github_token}@", 1)
+        return url.replace("https://", f"https://oauth2:{token}@", 1)
+
+    def _write_opencode_overlay(
+        self, project_dir: Path, connection: dict[str, Any] | None
+    ) -> None:
+        """Merge the Model Connection (provider+baseURL+apiKey+model) into opencode.json.
+
+        Lingua owns the model/provider/key; the agent-config repo keeps owning the
+        rest of opencode.json (prompt, skills, MCP). No-op when no connection is set
+        or there is no `.opencode/` to write into.
+        """
+        if not connection or not connection.get("model_id") or not connection.get("base_url"):
+            return
+        opencode_dir = project_dir / ".opencode"
+        if not opencode_dir.exists():
+            return
+
+        path = opencode_dir / "opencode.json"
+        base: dict[str, Any] = {}
+        if path.exists():
+            try:
+                base = json.loads(path.read_text())
+            except (json.JSONDecodeError, OSError):
+                logger.warning("Could not parse %s; overwriting model keys only", path)
+                base = {}
+
+        base.setdefault("$schema", "https://opencode.ai/config.json")
+        model_id = connection["model_id"]
+        providers = base.get("provider") or {}
+        providers[_OPENCODE_PROVIDER_ID] = {
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "Lingua Model Connection",
+            "options": {
+                "baseURL": connection["base_url"],
+                "apiKey": connection.get("api_key") or "",
+            },
+            "models": {model_id: {"name": model_id}},
+        }
+        base["provider"] = providers
+        base["model"] = f"{_OPENCODE_PROVIDER_ID}/{model_id}"
+        path.write_text(json.dumps(base, indent=2))
 
     def _ensure_gitignore_excludes_opencode(self, project_dir: Path) -> None:
         gi = project_dir / ".gitignore"

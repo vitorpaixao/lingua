@@ -16,4 +16,8 @@
 
 **Bootstrap Repo** — External git repo cloned into a new Project's workspace subdirectory. Provides the Vite + React scaffold. MUST NOT contain `.opencode/` — Lingua owns that.
 
-**Target Repo** — Where the Publish action pushes commits. The Project's `origin` remote.
+**Target Repo** — Where the Publish action pushes commits. The Project's `origin` remote. May be supplied by the user (an existing repo) or **created by Lingua** on the user's GitHub account at Project creation, using the GitHub PAT from the Credential Vault.
+
+**Credential Vault** — The per-instance, encrypted store (single row in SQLite) holding the GitHub PAT and the Model Connection. The single source of truth for credentials, surfaced in the **Settings** page; it replaces the former `GITHUB_TOKEN` / `OPENROUTER_API_KEY` environment variables. Secret values are encrypted at rest with a key from `LINGUA_SECRET_KEY`. Until it is configured, the app routes the user to Settings (first-run gate).
+
+**Model Connection** — The user-chosen LLM endpoint, shaped as `{ provider, base_url, api_key, model_id }` (provider one of OpenRouter, Local, or Custom — all OpenAI-compatible). Held in the Credential Vault and injected into both engines: directly into deepagents' `ChatOpenAI`, and into OpenCode via a generated `opencode.json` overlay in `.opencode/`. The agent-config repo no longer owns the model — only the prompt, skills, and MCP servers.

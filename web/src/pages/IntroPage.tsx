@@ -11,7 +11,12 @@ import {
   App as AntdApp,
   theme,
 } from 'antd';
-import { PlusOutlined, FolderOpenOutlined, DeleteOutlined } from '@ant-design/icons';
+import {
+  PlusOutlined,
+  FolderOpenOutlined,
+  DeleteOutlined,
+  SettingOutlined,
+} from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import {
@@ -112,6 +117,9 @@ export function IntroPage() {
         <Title level={3} style={{ margin: 0 }}>Lingua</Title>
         <Space>
           <ThemeToggle />
+          <Button icon={<SettingOutlined />} onClick={() => nav('/settings')}>
+            Settings
+          </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setNewOpen(true)}>
             New project
           </Button>

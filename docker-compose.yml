@@ -19,7 +19,8 @@ services:
       # container recreation (docker compose down/up).
       - lingua-opencode-data:/root/.local/share/opencode
     environment:
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:?OPENROUTER_API_KEY must be set in .env}
+      # Only for cloning a private AGENT_CONFIG_REPO_URL at boot. The model API key is
+      # injected into each project's .opencode/opencode.json by the orchestrator.
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - GIT_USER_NAME=${GIT_USER_NAME:-Lingua}
       - GIT_USER_EMAIL=${GIT_USER_EMAIL:-lingua@local}
@@ -46,14 +47,13 @@ services:
       - PROJECT_SYMLINK=/project-data/active
       - AGENT_CONFIG_DIR=/lingua-agent-config
       - SQLITE_PATH=/app/data/lingua.db
-      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - GIT_USER_NAME=${GIT_USER_NAME:-Lingua}
       - GIT_USER_EMAIL=${GIT_USER_EMAIL:-lingua@local}
-      # Agent engine: "opencode" (default) | "deepagents". deepagents runs in-process
-      # in the orchestrator and reuses OPENROUTER_API_KEY + the workspace exec bridge.
+      # Encrypts the Credential Vault (GitHub PAT + model API key) at rest.
+      - LINGUA_SECRET_KEY=${LINGUA_SECRET_KEY:?LINGUA_SECRET_KEY must be set in .env}
+      # Agent engine: "opencode" (default) | "deepagents". Both read the model
+      # connection (provider, base URL, API key, model id) from the Credential Vault.
       - AGENT_ENGINE=${AGENT_ENGINE:-opencode}
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
-      - DEEPAGENTS_MODEL=${DEEPAGENTS_MODEL:-anthropic/claude-sonnet-4.5}
       - EXEC_URL=http://workspace:4097
     depends_on:
       - redis

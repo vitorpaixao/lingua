@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
-
+from pydantic import BaseModel
 
 # ---------- chat ----------
 
@@ -46,6 +45,11 @@ class ProjectCreate(BaseModel):
     name: str
     bootstrap_url: str
     target_url: str | None = None
+    # When set, Lingua creates a GitHub repo on the user's account and uses it as
+    # the Target Repo (origin); `target_url` is then ignored.
+    create_github_repo: bool = False
+    visibility: Literal["private", "public"] = "private"
+    description: str | None = None
 
 
 class ProjectPatch(BaseModel):
@@ -53,6 +57,30 @@ class ProjectPatch(BaseModel):
     target_url: str | None = None
     bootstrap_url: str | None = None
     status: Literal["active", "archived"] | None = None
+
+
+# ---------- settings (credential vault) ----------
+
+
+ModelProvider = Literal["openrouter", "local", "custom"]
+
+
+class SettingsUpdate(BaseModel):
+    # Secrets: omit to keep unchanged, pass "" to clear, non-empty to set.
+    github_token: str | None = None
+    model_api_key: str | None = None
+    model_provider: ModelProvider | None = None
+    model_base_url: str | None = None
+    model_id: str | None = None
+
+
+class SettingsRead(BaseModel):
+    has_github_token: bool
+    model_provider: str | None
+    model_base_url: str | None
+    model_id: str | None
+    has_model_api_key: bool
+    is_configured: bool
 
 
 # ---------- workspace ----------

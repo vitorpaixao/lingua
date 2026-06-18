@@ -12,11 +12,13 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 from redis.asyncio import Redis
 from redis.exceptions import ConnectionError as RedisConnectionError
-from redis.exceptions import RedisError, TimeoutError as RedisTimeoutError
+from redis.exceptions import RedisError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 logger = logging.getLogger("lingua.redis")
 

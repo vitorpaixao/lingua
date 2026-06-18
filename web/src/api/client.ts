@@ -4,6 +4,8 @@ import type {
   GitStatus,
   PublishResult,
   SelectionPayload,
+  SettingsRead,
+  SettingsUpdate,
   WorkspaceActive,
   SwitchSuccess,
   SwitchNeedsConfirm,
@@ -101,7 +103,20 @@ export const createProject = (body: {
   name: string;
   bootstrap_url: string;
   target_url?: string;
+  create_github_repo?: boolean;
+  visibility?: 'private' | 'public';
+  description?: string;
 }) => request<Project>('/api/projects', { method: 'POST', body: JSON.stringify(body) });
+
+// ----- Settings (credential vault) -----
+
+export const getSettings = () => request<SettingsRead>('/api/settings');
+
+export const updateSettings = (patch: SettingsUpdate) =>
+  request<SettingsRead>('/api/settings', {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+  });
 
 export const updateProject = (id: string, patch: Partial<Project>) =>
   request<Project>(`/api/projects/${id}`, {

@@ -18,8 +18,8 @@ Key design points (all verified against deepagents 0.6.7):
 - **Bash.** deepagents' built-in `execute` is auto-filtered because `FilesystemBackend` has no
   shell. A custom `run_bash` tool routes commands to the workspace container's exec bridge,
   where node/npm and the project's `node_modules` live.
-- **Model.** Reuses `OPENROUTER_API_KEY` via `ChatOpenAI(base_url=openrouter)` — same provider,
-  model, and cost profile as OpenCode today.
+- **Model.** Built from the Credential Vault's Model Connection (`base_url`/`api_key`/`model_id`)
+  via `ChatOpenAI` — the same UI-managed connection OpenCode receives through opencode.json.
 """
 
 from __future__ import annotations
@@ -40,10 +40,9 @@ from langgraph.types import Command, interrupt
 from lingua.config import Settings
 from lingua.engines.base import QUESTION_DETECTED, QUESTION_REQUEST_ID, OnStep
 from lingua.engines.steps import record_file_change, text_step, tool_step
+from lingua.settings_store import SettingsStore
 
 logger = logging.getLogger("lingua.engine.deepagents")
-
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 LINGUA_CODING_PROMPT = """\
 You are Lingua's coding agent. You edit a live Vite + React + TypeScript project.
@@ -76,18 +75,15 @@ def _content_to_text(content: Any) -> str:
 class DeepAgentsEngine:
     """Runs the deepagents graph and adapts it to the Lingua engine contract."""
 
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, settings_store: SettingsStore):
         self.settings = settings
+        self.settings_store = settings_store
         self.symlink = str(settings.project_symlink)
         self.exec_url = settings.exec_url.rstrip("/")
 
-        self._model = ChatOpenAI(
-            model=settings.deepagents_model,
-            base_url=OPENROUTER_BASE_URL,
-            api_key=settings.openrouter_api_key,
-        )
-        # Built lazily on first run() so the durable async checkpointer can be opened
-        # inside an event loop. Tests use the pure helpers without an agent.
+        # Model + checkpointer are built lazily on first run() — the model from the
+        # Credential Vault, the checkpointer inside an event loop. Tests use the pure
+        # helpers without an agent.
         self.agent: Any = None
         self._checkpointer_cm: Any = None
 
@@ -100,6 +96,18 @@ class DeepAgentsEngine:
         """
         if self.agent is not None:
             return
+
+        connection = await self.settings_store.get_model_connection()
+        if not connection:
+            raise RuntimeError(
+                "No Model Connection configured. Set the model + API key in Settings."
+            )
+        model = ChatOpenAI(
+            model=connection["model_id"],
+            base_url=connection["base_url"],
+            api_key=connection.get("api_key") or "",
+        )
+
         checkpointer: Any
         try:
             from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -119,7 +127,7 @@ class DeepAgentsEngine:
             checkpointer = MemorySaver()
 
         self.agent = create_deep_agent(
-            model=self._model,
+            model=model,
             tools=[self._make_ask_user(), self._make_run_bash()],
             system_prompt=LINGUA_CODING_PROMPT,
             backend=self._backend_factory,

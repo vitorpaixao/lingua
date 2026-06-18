@@ -13,6 +13,7 @@ from lingua.engines import Engine
 from lingua.engines.opencode import OpenCodeClient, OpenCodeEngine
 from lingua.projects import ProjectStore
 from lingua.redis_store import RedisStore
+from lingua.settings_store import SettingsStore
 from lingua.workspace import WorkspaceManager
 
 logger = logging.getLogger("lingua.deps")
@@ -54,13 +55,8 @@ def get_engine() -> Engine:
         # Imported lazily so the heavy deepagents/langchain stack only loads when selected.
         from lingua.engines.deepagents import DeepAgentsEngine
 
-        if not settings.openrouter_api_key:
-            logger.warning(
-                "AGENT_ENGINE=deepagents but OPENROUTER_API_KEY is unset; "
-                "model calls will fail."
-            )
-        logger.info("Agent engine: deepagents (model=%s)", settings.deepagents_model)
-        return DeepAgentsEngine(settings)
+        logger.info("Agent engine: deepagents (model from Credential Vault)")
+        return DeepAgentsEngine(settings, get_settings_store())
     logger.info("Agent engine: opencode")
     return OpenCodeEngine(get_opencode_client(), get_conversations(), get_store())
 
@@ -68,6 +64,11 @@ def get_engine() -> Engine:
 @lru_cache(maxsize=1)
 def get_projects() -> ProjectStore:
     return ProjectStore(get_settings().sqlite_path)
+
+
+@lru_cache(maxsize=1)
+def get_settings_store() -> SettingsStore:
+    return SettingsStore(get_settings().sqlite_path)
 
 
 @lru_cache(maxsize=1)
@@ -82,7 +83,6 @@ def get_workspace_manager() -> WorkspaceManager:
         data_dir=s.project_data_dir,
         symlink_path=s.project_symlink,
         agent_config_dir=s.agent_config_dir,
-        github_token=s.github_token,
         git_user_name=s.git_user_name,
         git_user_email=s.git_user_email,
     )

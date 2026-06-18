@@ -100,9 +100,33 @@ function answerContinuation(): AgentEvent[] {
   ];
 }
 
+// ---------- settings (credential vault) ----------
+
+const mockSettings = {
+  has_github_token: false,
+  model_provider: 'openrouter' as string | null,
+  model_base_url: 'https://openrouter.ai/api/v1' as string | null,
+  model_id: 'anthropic/claude-sonnet-4.5' as string | null,
+  has_model_api_key: true,
+  is_configured: true,
+};
+
 // ---------- handlers ----------
 
 export const handlers = [
+  // settings
+  http.get('/api/settings', () => HttpResponse.json(mockSettings)),
+  http.put('/api/settings', async ({ request }) => {
+    const patch = (await request.json()) as Record<string, string>;
+    if (patch.model_provider !== undefined) mockSettings.model_provider = patch.model_provider;
+    if (patch.model_base_url !== undefined) mockSettings.model_base_url = patch.model_base_url;
+    if (patch.model_id !== undefined) mockSettings.model_id = patch.model_id;
+    if (patch.github_token !== undefined) mockSettings.has_github_token = !!patch.github_token;
+    if (patch.model_api_key !== undefined) mockSettings.has_model_api_key = !!patch.model_api_key;
+    mockSettings.is_configured = !!(mockSettings.model_id && mockSettings.model_base_url);
+    return HttpResponse.json(mockSettings);
+  }),
+
   // chat: submit prompt
   http.post('/api/chat', async ({ request }) => {
     const body = (await request.json()) as { session_id: string; prompt: string };

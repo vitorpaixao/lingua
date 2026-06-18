@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 _FIELD_ORDER = ("source", "component", "selector", "text", "html")
 _HEADER = "[Selected element from preview — edit this in code]"
 

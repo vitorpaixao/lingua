@@ -4,21 +4,26 @@ These assert that deepagents stream events are routed correctly into the shared 
 contract (`lingua.engines.steps`). Construction is offline (no model call).
 """
 
+from pathlib import Path
+
 import pytest
 from langchain_core.messages import AIMessage, AIMessageChunk
 
 from lingua.config import Settings
 from lingua.engines.base import QUESTION_DETECTED
 from lingua.engines.deepagents.engine import DeepAgentsEngine, _content_to_text
+from lingua.settings_store import SettingsStore
 
 
 @pytest.fixture
-def engine(monkeypatch) -> DeepAgentsEngine:
+def engine(monkeypatch, tmp_path) -> DeepAgentsEngine:
     monkeypatch.setenv("AGENT_ENGINE", "deepagents")
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test-dummy")
     monkeypatch.setenv("PROJECT_SYMLINK", "/tmp/lingua-test-active")
     monkeypatch.setenv("EXEC_URL", "http://workspace:4097")
-    return DeepAgentsEngine(Settings.from_env())
+    # The model is built lazily from the vault inside _ensure_agent; these offline
+    # tests only exercise the pure translation helpers, so an empty store is fine.
+    store = SettingsStore(Path(tmp_path) / "lingua.db")
+    return DeepAgentsEngine(Settings.from_env(), store)
 
 
 # ---------- pure helpers ----------

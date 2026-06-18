@@ -5,7 +5,12 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
-from lingua.deps import get_projects, get_store, get_workspace_manager
+from lingua.deps import (
+    get_projects,
+    get_settings_store,
+    get_store,
+    get_workspace_manager,
+)
 from lingua.schemas import WorkspaceSwitchRequest
 
 router = APIRouter()
@@ -25,10 +30,13 @@ async def switch_workspace(req: WorkspaceSwitchRequest):
     store = get_store()
     projects = get_projects()
     wsm = get_workspace_manager()
+    vault = get_settings_store()
 
     target = await projects.get(req.project_id)
     if not target:
         raise HTTPException(status_code=404, detail="project not found")
+
+    model_connection = await vault.get_model_connection()
 
     current_id = await store.get_active_workspace()
 
@@ -57,10 +65,12 @@ async def switch_workspace(req: WorkspaceSwitchRequest):
             project_id=req.project_id,
             bootstrap_url=target["bootstrap_url"],
             target_url=target.get("target_url"),
+            github_token=await vault.get_github_token(),
+            model_connection=model_connection,
         )
 
-    # Atomic symlink swap + agent-config refresh
-    await wsm.switch(req.project_id)
+    # Atomic symlink swap + agent-config + Model Connection refresh
+    await wsm.switch(req.project_id, model_connection=model_connection)
 
     # NOTE: no session truncation here. Chat state is keyed per Conversation (durable
     # in SQLite), so switching Projects must never destroy another's history. Each

@@ -67,6 +67,25 @@ export type AgentResponse = {
 
 export type AgentEvent = AgentStep | AgentQuestion | AgentResponse;
 
+export type ModelProvider = 'openrouter' | 'local' | 'custom';
+
+export type SettingsRead = {
+  has_github_token: boolean;
+  model_provider: ModelProvider | null;
+  model_base_url: string | null;
+  model_id: string | null;
+  has_model_api_key: boolean;
+  is_configured: boolean;
+};
+
+export type SettingsUpdate = {
+  github_token?: string;
+  model_api_key?: string;
+  model_provider?: ModelProvider;
+  model_base_url?: string;
+  model_id?: string;
+};
+
 export type WorkspaceActive = { project_id: string | null; name: string | null };
 
 export type SwitchSuccess = { ok: true; active_project_id: string };

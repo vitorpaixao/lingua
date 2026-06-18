@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, HTTPException
 
-from lingua.deps import get_projects
+from lingua.deps import get_projects, get_settings_store
+from lingua.github import GitHubError, create_repo
 from lingua.schemas import ProjectCreate, ProjectPatch
 
 router = APIRouter()
+
+
+def _slugify(name: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9._-]+", "-", name.strip()).strip("-")
+    return slug or "lingua-project"
 
 
 @router.get("/api/projects")
@@ -17,10 +25,29 @@ async def list_projects(include_archived: bool = False):
 
 @router.post("/api/projects", status_code=201)
 async def create_project(body: ProjectCreate):
+    target_url = body.target_url
+
+    if body.create_github_repo:
+        token = await get_settings_store().get_github_token()
+        if not token:
+            raise HTTPException(
+                status_code=400,
+                detail="No GitHub token configured. Add one in Settings first.",
+            )
+        try:
+            target_url = await create_repo(
+                token,
+                _slugify(body.name),
+                private=body.visibility == "private",
+                description=body.description or None,
+            )
+        except GitHubError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     return await get_projects().create(
         name=body.name,
         bootstrap_url=body.bootstrap_url,
-        target_url=body.target_url,
+        target_url=target_url,
     )
 
 

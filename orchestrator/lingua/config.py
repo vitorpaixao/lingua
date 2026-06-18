@@ -15,13 +15,12 @@ class Settings:
     project_symlink: Path
     agent_config_dir: Path
     sqlite_path: Path
-    github_token: str | None
     git_user_name: str
     git_user_email: str
-    # Agent engine selection + deepagents config
+    # Encryption key for the Credential Vault (Fernet). Required at runtime.
+    lingua_secret_key: str | None
+    # Agent engine selection. Credentials + model live in the Credential Vault.
     agent_engine: str
-    openrouter_api_key: str | None
-    deepagents_model: str
     deepagents_checkpoint_path: Path
     exec_url: str
 
@@ -38,15 +37,11 @@ class Settings:
                 os.getenv("AGENT_CONFIG_DIR", "/lingua-agent-config")
             ),
             sqlite_path=Path(os.getenv("SQLITE_PATH", "/app/data/lingua.db")),
-            github_token=os.getenv("GITHUB_TOKEN") or None,
             git_user_name=os.getenv("GIT_USER_NAME", "Lingua"),
             git_user_email=os.getenv("GIT_USER_EMAIL", "lingua@local"),
+            lingua_secret_key=os.getenv("LINGUA_SECRET_KEY") or None,
             # "opencode" (default) | "deepagents"
             agent_engine=os.getenv("AGENT_ENGINE", "opencode").strip().lower(),
-            openrouter_api_key=os.getenv("OPENROUTER_API_KEY") or None,
-            deepagents_model=os.getenv(
-                "DEEPAGENTS_MODEL", "anthropic/claude-sonnet-4.5"
-            ),
             deepagents_checkpoint_path=Path(
                 os.getenv(
                     "DEEPAGENTS_CHECKPOINT_PATH",

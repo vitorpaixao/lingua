@@ -10,6 +10,7 @@ from lingua.routes_chat import router as chat_router
 from lingua.routes_conversations import router as conversations_router
 from lingua.routes_git import router as git_router
 from lingua.routes_projects import router as projects_router
+from lingua.routes_settings import router as settings_router
 from lingua.routes_workspace import router as workspace_router
 
 logging.basicConfig(
@@ -29,4 +30,5 @@ app.include_router(chat_router)
 app.include_router(conversations_router)
 app.include_router(git_router)
 app.include_router(projects_router)
+app.include_router(settings_router)
 app.include_router(workspace_router)
