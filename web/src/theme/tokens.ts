@@ -32,14 +32,18 @@ export function buildLinguaTheme(mode: 'light' | 'dark'): ThemeConfig {
       ...(dark ? darkPalette : {}),
     },
     components: {
-      // Figma shows the active activity pill as a solid white fill on dark.
-      Segmented: dark
-        ? {
-            trackBg: darkPalette.colorBgContainer,
-            itemSelectedBg: '#ffffff',
-            itemSelectedColor: darkPalette.colorBgLayout,
-          }
-        : {},
+      // Transparent track (shows the layout bg behind it); the selected pill is a
+      // soft elevated fill on dark (light mode keeps antd's default selected look).
+      Segmented: {
+        trackBg: 'transparent',
+        ...(dark
+          ? { itemSelectedBg: darkPalette.colorBgElevated, itemSelectedColor: '#ffffff' }
+          : {}),
+      },
+      // Flat selector: transparent field (keeps its border), matching the Segmented track.
+      Select: {
+        selectorBg: 'transparent',
+      },
     },
   };
 }

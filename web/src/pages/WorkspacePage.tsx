@@ -16,7 +16,7 @@ import {
   listConversations,
   createConversation,
 } from '@/api/client';
-import type { Project, SelectionPayload } from '@/types/api';
+import type { Conversation, Project, SelectionPayload } from '@/types/api';
 
 const DRAG_KEY = 'lingua_preview_width';
 
@@ -47,8 +47,15 @@ export function WorkspacePage() {
   const [pickMode, setPickMode] = useState(false);
   const [selections, setSelections] = useState<SelectionPayload[]>([]);
   const [previewKey, setPreviewKey] = useState(0);
-  const [convTitle, setConvTitle] = useState('Conversations');
+  const [items, setItems] = useState<Conversation[]>([]);
   const { token } = theme.useToken();
+
+  const reload = useCallback(async () => {
+    if (!projectId) return [];
+    const list = await listConversations(projectId);
+    setItems(list);
+    return list;
+  }, [projectId]);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const previewPctRef = useRef<number>(loadPreviewPct());
@@ -102,23 +109,10 @@ export function WorkspacePage() {
     };
   }, [projectId, conversationId, nav]);
 
-  // Resolve the active conversation's title for the selector label.
+  // Load the conversation list (shared by the Select and the full list view).
   useEffect(() => {
-    if (!projectId || !conversationId) {
-      setConvTitle('Conversations');
-      return;
-    }
-    let cancelled = false;
-    listConversations(projectId)
-      .then((list) => {
-        if (cancelled) return;
-        setConvTitle(list.find((c) => c.id === conversationId)?.title ?? 'Conversations');
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, conversationId]);
+    void reload();
+  }, [reload, conversationId]);
 
   // postMessage listener for picker
   useEffect(() => {
@@ -222,7 +216,9 @@ export function WorkspacePage() {
               </div>
               <div style={{ padding: '0 0 8px', flexShrink: 0 }}>
                 <ConversationSelect
-                  title={convTitle}
+                  items={items}
+                  value={conversationId}
+                  onSelect={selectConversation}
                   open={view === 'list'}
                   onToggle={() => setView((v) => (v === 'list' ? 'chat' : 'list'))}
                 />
@@ -232,6 +228,8 @@ export function WorkspacePage() {
                   <ConversationList
                     projectId={project.id}
                     activeId={conversationId}
+                    items={items}
+                    reload={reload}
                     onSelect={selectConversation}
                   />
                 ) : conversationId ? (

@@ -9,7 +9,7 @@ export const figma = {
    * splitter-panel inset (Figma hoists the horizontal gutter onto the column containers).
    * Change this to reflow both columns.
    */
-  workspaceGutter: 24,
+  workspaceGutter: 16,
   /** Inner padding of the preview window card. */
   previewCardPadding: 8,
 } as const;

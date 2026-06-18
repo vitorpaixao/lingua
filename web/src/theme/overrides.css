@@ -7,7 +7,7 @@
  *   lingua-workspace            left column root            (WorkspacePage)
  *   lingua-workspace-header     back + logo + theme toggle  (WorkspaceHeader)
  *   lingua-activity-tabs        horizontal Segmented menu   (ActivityTabs)
- *   lingua-conversation-select  dropdown trigger            (ConversationSelect)
+ *   lingua-conversation-select  select + list toggle row     (ConversationSelect)
  *   lingua-conversation-list    thread list                 (ConversationList)
  *   lingua-chat                 chat column root            (ChatPanel)
  *   lingua-chat-messages        bubble list region          (ChatPanel)

@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import { Conversations } from '@ant-design/x';
 import type { ConversationsProps } from '@ant-design/x';
 import { App as AntdApp, Button, Flex, Input, theme } from 'antd';
 import type { GetProp } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import {
-  listConversations,
   createConversation,
   renameConversation,
   archiveConversation,
@@ -32,25 +31,18 @@ function bucket(iso: string): string {
 export function ConversationList({
   projectId,
   activeId,
+  items,
+  reload,
   onSelect,
 }: {
   projectId: string;
   activeId: string | null;
+  items: Conversation[];
+  reload: () => Promise<Conversation[]>;
   onSelect: (id: string) => void;
 }) {
   const { modal } = AntdApp.useApp();
   const { token } = theme.useToken();
-  const [items, setItems] = useState<Conversation[]>([]);
-
-  const reload = useCallback(async () => {
-    const list = await listConversations(projectId);
-    setItems(list);
-    return list;
-  }, [projectId]);
-
-  useEffect(() => {
-    void reload();
-  }, [reload]);
 
   const onNew = useCallback(async () => {
     const c = await createConversation(projectId);
