@@ -116,6 +116,15 @@ const mockSettings = {
 export const handlers = [
   // settings
   http.get('/api/settings', () => HttpResponse.json(mockSettings)),
+  http.post('/api/models/list', () =>
+    HttpResponse.json({
+      models: [
+        { id: 'anthropic/claude-sonnet-4.5', name: 'Claude Sonnet 4.5' },
+        { id: 'openai/gpt-4o', name: 'GPT-4o' },
+        { id: 'qwen2.5-coder', name: 'qwen2.5-coder' },
+      ],
+    }),
+  ),
   http.put('/api/settings', async ({ request }) => {
     const patch = (await request.json()) as Record<string, string>;
     if (patch.model_provider !== undefined) mockSettings.model_provider = patch.model_provider;

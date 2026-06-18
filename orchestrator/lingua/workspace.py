@@ -138,6 +138,22 @@ class WorkspaceManager:
         os.symlink(target, tmp, target_is_directory=True)
         os.replace(tmp, link)
 
+    async def set_target_remote(self, project_id: str, target_url: str) -> None:
+        """Point the project's `origin` remote at a new Target Repo.
+
+        Updates the per-project checkout directly (not via the active symlink), so it
+        works whether or not the project is currently open. No-op if the subdir does
+        not exist yet — `create()` will add `origin` from the DB row on first switch.
+        """
+        project_dir = self.data_dir / project_id
+        if not project_dir.exists():
+            return
+        remotes = await self._git_in(project_dir, ["remote"])
+        if "origin" in remotes.split():
+            await self._git_in(project_dir, ["remote", "set-url", "origin", target_url])
+        else:
+            await self._git_in(project_dir, ["remote", "add", "origin", target_url])
+
     async def is_dirty(self) -> bool:
         """True if the currently-active /project has uncommitted changes."""
         if not self.symlink_path.exists():

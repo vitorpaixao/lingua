@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Flex, Spin, Splitter, theme } from 'antd';
+import { Button, Flex, Spin, Splitter, Tooltip, theme } from 'antd';
+import { SettingOutlined } from '@ant-design/icons';
 import { WorkspaceHeader } from '@/components/WorkspaceHeader';
 import { PreviewToolbar } from '@/components/PreviewToolbar';
 import { ChatPanel } from '@/components/ChatPanel';
 import { ActivityTabs } from '@/components/ActivityTabs';
 import { ConversationSelect } from '@/components/ConversationSelect';
 import { ConversationList } from '@/components/ConversationList';
+import { ProjectSettingsForm } from '@/components/ProjectSettingsForm';
 import { PreviewPanel } from '@/components/PreviewPanel';
 import { figma } from '@/theme/figma';
 import {
@@ -31,8 +33,9 @@ export function WorkspacePage() {
   const projectId = params.get('id');
   const conversationId = params.get('c');
 
-  // The chat column shows either the active chat ('chat') or the conversation list ('list').
-  const [view, setView] = useState<'chat' | 'list'>('chat');
+  // The left column shows the active chat ('chat'), the conversation list ('list'),
+  // or the per-project settings ('project').
+  const [view, setView] = useState<'chat' | 'list' | 'project'>('chat');
 
   const selectConversation = useCallback(
     (id: string) => {
@@ -211,20 +214,39 @@ export function WorkspacePage() {
               }}
             >
               <WorkspaceHeader />
-              <div style={{ padding: '8px 0', flexShrink: 0 }}>
-                <ActivityTabs />
-              </div>
-              <div style={{ padding: '0 0 8px', flexShrink: 0 }}>
-                <ConversationSelect
-                  items={items}
-                  value={conversationId}
-                  onSelect={selectConversation}
-                  open={view === 'list'}
-                  onToggle={() => setView((v) => (v === 'list' ? 'chat' : 'list'))}
-                />
-              </div>
+              <Flex align="center" gap={8} style={{ padding: '8px 0', flexShrink: 0 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <ActivityTabs />
+                </div>
+                <Tooltip title="Project settings">
+                  <Button
+                    type={view === 'project' ? 'primary' : 'text'}
+                    icon={<SettingOutlined />}
+                    onClick={() => setView((v) => (v === 'project' ? 'chat' : 'project'))}
+                  />
+                </Tooltip>
+              </Flex>
+              {view !== 'project' && (
+                <div style={{ padding: '0 0 8px', flexShrink: 0 }}>
+                  <ConversationSelect
+                    items={items}
+                    value={conversationId}
+                    onSelect={selectConversation}
+                    open={view === 'list'}
+                    onToggle={() => setView((v) => (v === 'list' ? 'chat' : 'list'))}
+                  />
+                </div>
+              )}
               <Flex vertical flex={1} style={{ minHeight: 0, minWidth: 0 }}>
-                {view === 'list' ? (
+                {view === 'project' ? (
+                  <ProjectSettingsForm
+                    project={project}
+                    onSaved={(p) => {
+                      setProject(p);
+                      setView('chat');
+                    }}
+                  />
+                ) : view === 'list' ? (
                   <ConversationList
                     projectId={project.id}
                     activeId={conversationId}

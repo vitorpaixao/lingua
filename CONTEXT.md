@@ -18,6 +18,10 @@
 
 **Target Repo** — Where the Publish action pushes commits. The Project's `origin` remote. May be supplied by the user (an existing repo) or **created by Lingua** on the user's GitHub account at Project creation, using the GitHub PAT from the Credential Vault.
 
-**Credential Vault** — The per-instance, encrypted store (single row in SQLite) holding the GitHub PAT and the Model Connection. The single source of truth for credentials, surfaced in the **Settings** page; it replaces the former `GITHUB_TOKEN` / `OPENROUTER_API_KEY` environment variables. Secret values are encrypted at rest with a key from `LINGUA_SECRET_KEY`. Until it is configured, the app routes the user to Settings (first-run gate).
+**Credential Vault** — The per-instance, encrypted store (single row in SQLite) holding the GitHub PAT and the Model Connection. The single source of truth for credentials; it replaces the former `GITHUB_TOKEN` / `OPENROUTER_API_KEY` environment variables. Secret values are encrypted at rest with a key from `LINGUA_SECRET_KEY`. It is the content of **System Configuration**.
+
+**System Configuration** — Instance-wide settings: the Credential Vault (the GitHub PAT and the Model Connection). Surfaced as a drawer opened from the project-list page, beside "New project". Until a Model Connection exists, project creation is blocked (first-run gate).
+
+**Project Configuration** — Per-project settings: the Project's name and its Target Repo. Surfaced from the workspace, beside the activity tabs. Editing the Target Repo also rewrites the checkout's `origin` remote. The Bootstrap Repo is shown but not editable (it is cloned once).
 
 **Model Connection** — The user-chosen LLM endpoint, shaped as `{ provider, base_url, api_key, model_id }` (provider one of OpenRouter, Local, or Custom — all OpenAI-compatible). Held in the Credential Vault and injected into both engines: directly into deepagents' `ChatOpenAI`, and into OpenCode via a generated `opencode.json` overlay in `.opencode/`. The agent-config repo no longer owns the model — only the prompt, skills, and MCP servers.

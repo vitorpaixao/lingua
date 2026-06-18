@@ -3,6 +3,8 @@ import type {
   Conversation,
   GitStatus,
   PublishResult,
+  ModelListResult,
+  ModelProvider,
   SelectionPayload,
   SettingsRead,
   SettingsUpdate,
@@ -116,6 +118,16 @@ export const updateSettings = (patch: SettingsUpdate) =>
   request<SettingsRead>('/api/settings', {
     method: 'PUT',
     body: JSON.stringify(patch),
+  });
+
+export const listModels = (body: {
+  provider: ModelProvider;
+  base_url?: string;
+  api_key?: string;
+}) =>
+  request<ModelListResult>('/api/models/list', {
+    method: 'POST',
+    body: JSON.stringify(body),
   });
 
 export const updateProject = (id: string, patch: Partial<Project>) =>

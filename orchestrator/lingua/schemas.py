@@ -74,6 +74,13 @@ class SettingsUpdate(BaseModel):
     model_id: str | None = None
 
 
+class ModelListRequest(BaseModel):
+    provider: ModelProvider
+    base_url: str | None = None
+    # Optional: the key being typed in the form. Falls back to the saved vault key.
+    api_key: str | None = None
+
+
 class SettingsRead(BaseModel):
     has_github_token: bool
     model_provider: str | None

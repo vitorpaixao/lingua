@@ -6,7 +6,7 @@ import re
 
 from fastapi import APIRouter, HTTPException
 
-from lingua.deps import get_projects, get_settings_store
+from lingua.deps import get_projects, get_settings_store, get_workspace_manager
 from lingua.github import GitHubError, create_repo
 from lingua.schemas import ProjectCreate, ProjectPatch
 
@@ -65,6 +65,10 @@ async def patch_project(project_id: str, body: ProjectPatch):
     p = await get_projects().update(project_id, **patch)
     if not p:
         raise HTTPException(status_code=404, detail="project not found")
+    # Keep the checkout's `origin` remote in sync with the Target Repo so Publish
+    # targets the new URL.
+    if patch.get("target_url"):
+        await get_workspace_manager().set_target_remote(project_id, patch["target_url"])
     return p
 
 

@@ -1,12 +1,15 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
+  Alert,
   Button,
   Card,
+  Drawer,
   Empty,
   Flex,
   Layout,
   Space,
   Spin,
+  Tooltip,
   Typography,
   App as AntdApp,
   theme,
@@ -25,9 +28,11 @@ import {
   switchWorkspace,
   archiveProject,
   gitPublish,
+  getSettings,
 } from '@/api/client';
 import type { Project, SwitchNeedsConfirm } from '@/types/api';
 import { NewProjectModal, type NewProjectValues } from '@/components/NewProjectModal';
+import { SystemSettingsForm } from '@/components/SystemSettingsForm';
 import { DirtySwitchModal } from '@/components/DirtySwitchModal';
 
 const { Header, Content } = Layout;
@@ -46,14 +51,36 @@ export function IntroPage() {
     currentName: string;
   } | null>(null);
   const [publishing, setPublishing] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // null = unknown (still loading); drives the first-run gate.
+  const [configured, setConfigured] = useState<boolean | null>(null);
 
   const load = useCallback(async () => {
     setProjects(await listProjects());
   }, []);
 
+  const refreshConfigured = useCallback(async () => {
+    try {
+      const s = await getSettings();
+      setConfigured(s.is_configured);
+      return s.is_configured;
+    } catch {
+      setConfigured(true); // fail open — don't trap the user on API error
+      return true;
+    }
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  // First-run gate: empty vault → open the System settings drawer and block New project.
+  useEffect(() => {
+    void (async () => {
+      const ok = await refreshConfigured();
+      if (!ok) setSettingsOpen(true);
+    })();
+  }, [refreshConfigured]);
 
   const open = useCallback(
     async (project: Project, force = false) => {
@@ -117,15 +144,36 @@ export function IntroPage() {
         <Title level={3} style={{ margin: 0 }}>Lingua</Title>
         <Space>
           <ThemeToggle />
-          <Button icon={<SettingOutlined />} onClick={() => nav('/settings')}>
-            Settings
+          <Button icon={<SettingOutlined />} onClick={() => setSettingsOpen(true)}>
+            System settings
           </Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setNewOpen(true)}>
-            New project
-          </Button>
+          <Tooltip title={configured === false ? 'Connect a model in System settings first' : ''}>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              disabled={configured !== true}
+              onClick={() => setNewOpen(true)}
+            >
+              New project
+            </Button>
+          </Tooltip>
         </Space>
       </Header>
       <Content style={{ padding: 24 }}>
+        {configured === false && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="Connect a model to get started"
+            description="Open System settings and add a Model Connection before creating a project. A GitHub token is optional, for creating repos and publishing."
+            action={
+              <Button size="small" onClick={() => setSettingsOpen(true)}>
+                System settings
+              </Button>
+            }
+          />
+        )}
         {projects === null ? (
           <Flex justify="center" align="center" style={{ padding: 48 }}>
             <Spin size="large" />
@@ -164,6 +212,19 @@ export function IntroPage() {
           </Space>
         )}
       </Content>
+
+      <Drawer
+        title="System settings"
+        placement="right"
+        width={480}
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        // Don't let a first-run user dismiss until a model is connected.
+        closable={configured !== false}
+        maskClosable={configured !== false}
+      >
+        <SystemSettingsForm onSaved={(s) => setConfigured(s.is_configured)} />
+      </Drawer>
 
       <NewProjectModal
         open={newOpen}

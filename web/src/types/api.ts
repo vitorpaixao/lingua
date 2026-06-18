@@ -86,6 +86,10 @@ export type SettingsUpdate = {
   model_id?: string;
 };
 
+export type ModelInfo = { id: string; name: string };
+
+export type ModelListResult = { models: ModelInfo[]; error?: string };
+
 export type WorkspaceActive = { project_id: string | null; name: string | null };
 
 export type SwitchSuccess = { ok: true; active_project_id: string };
