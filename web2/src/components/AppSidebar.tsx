@@ -94,7 +94,7 @@ export function AppSidebar() {
         </SidebarMenu>
 
         {/* conversation--swap */}
-        <div data-fig="conversation--swap" className="px-2">
+        <div data-fig="conversation--swap">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button

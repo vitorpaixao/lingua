@@ -9,3 +9,5 @@ orchestrator/data/
 !orchestrator/data/.gitkeep
 web/node_modules/
 web/dist/
+web2/dist/
+*.tsbuildinfo
